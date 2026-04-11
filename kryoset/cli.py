@@ -220,6 +220,47 @@ def user_change_password(username: str, config: str | None) -> None:
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--lines", "-n", default=50, show_default=True, help="Number of lines to show.")
+@click.option("--follow", "-f", is_flag=True, help="Follow the log in real time (like tail -f).")
+@click.option("--filter", "event_filter", default=None, help="Show only lines containing this text (e.g. AUTH_FAILURE).")
+def logs(lines: int, follow: bool, event_filter: str | None) -> None:
+    """Display the Kryoset audit log."""
+    from kryoset.core.audit_logger import LOG_DIRECTORY
+    import time
+
+    log_file = LOG_DIRECTORY / "kryoset.log"
+    if not log_file.exists():
+        click.echo("[info] No audit log found yet. Start the server and connect to generate logs.")
+        return
+
+    def _matches(line: str) -> bool:
+        if event_filter is None:
+            return True
+        return event_filter.upper() in line.upper()
+
+    if not follow:
+        all_lines = log_file.read_text(encoding="utf-8").splitlines()
+        filtered = [line for line in all_lines if _matches(line)]
+        for line in filtered[-lines:]:
+            click.echo(line)
+        return
+
+    with open(log_file, "r", encoding="utf-8") as log_handle:
+        log_handle.seek(0, 2)
+        click.echo("[info] Following audit log — press Ctrl-C to stop.")
+        try:
+            while True:
+                line = log_handle.readline()
+                if line:
+                    if _matches(line):
+                        click.echo(line, nl=False)
+                else:
+                    time.sleep(0.25)
+        except KeyboardInterrupt:
+            click.echo("\n[info] Stopped.")
+
+
 def main() -> None:
     """Entry point registered in pyproject.toml."""
     cli()

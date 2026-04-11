@@ -1,5 +1,4 @@
 import secrets
-from typing import Optional
 
 import bcrypt
 

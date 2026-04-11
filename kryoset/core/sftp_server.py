@@ -6,6 +6,7 @@ from pathlib import Path
 
 import paramiko
 
+from kryoset.core.audit_logger import AuditLogger
 from kryoset.core.configuration import Configuration
 from kryoset.core.user_manager import UserManager
 
@@ -17,11 +18,32 @@ class KryosetSFTPHandle(paramiko.SFTPHandle):
     File handle returned by the SFTP server for open-file operations.
 
     Wraps a standard Python file object and delegates read/write calls to it.
+    Notifies the audit logger when the file is closed after a write (upload).
+
+    Args:
+        file_object: Open Python file object backing this handle.
+        flags: Paramiko flags describing how the file was opened.
+        audit_logger: Server-wide audit logger instance.
+        username: Authenticated user who opened the file.
+        remote_path: Client-visible path of the file.
+        is_write: True when the file was opened for writing (upload).
     """
 
-    def __init__(self, file_object, flags: int = 0) -> None:
+    def __init__(
+        self,
+        file_object,
+        flags: int = 0,
+        audit_logger: AuditLogger | None = None,
+        username: str = "",
+        remote_path: str = "",
+        is_write: bool = False,
+    ) -> None:
         super().__init__(flags)
         self._file = file_object
+        self._audit_logger = audit_logger
+        self._username = username
+        self._remote_path = remote_path
+        self._is_write = is_write
 
     def read(self, offset: int, length: int) -> bytes:
         self._file.seek(offset)
@@ -34,6 +56,8 @@ class KryosetSFTPHandle(paramiko.SFTPHandle):
 
     def close(self) -> None:
         self._file.close()
+        if self._audit_logger and self._is_write:
+            self._audit_logger.log_file_write(self._username, self._remote_path)
 
     def stat(self) -> paramiko.SFTPAttributes:
         return paramiko.SFTPAttributes.from_stat(os.fstat(self._file.fileno()))
@@ -44,15 +68,26 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
     SFTP subsystem handler chrooted to the Kryoset storage path.
 
     Every path received from the client is resolved relative to
-    ``storage_path``, preventing directory-traversal attacks.
+    ``storage_path``, preventing directory-traversal attacks. All file
+    operations are forwarded to the audit logger.
 
     Args:
-        server: The :class:`paramiko.ServerInterface` for this session.
+        server: The :class:`KryosetServerInterface` for this session.
         storage_path: Absolute path to the shared storage directory.
+        audit_logger: Server-wide audit logger instance.
     """
 
-    def __init__(self, server, storage_path: Path, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        server,
+        storage_path: Path,
+        audit_logger: AuditLogger,
+        *args,
+        **kwargs,
+    ) -> None:
         self._storage_path = storage_path
+        self._audit_logger = audit_logger
+        self._username: str = getattr(server, "authenticated_username", "")
         super().__init__(server, *args, **kwargs)
 
     def _resolve(self, client_path: str) -> Path:
@@ -68,6 +103,14 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             logger.warning("Directory traversal attempt blocked: %s", client_path)
             return self._storage_path
         return resolved
+
+    def _to_remote_path(self, local_path: Path) -> str:
+        """Return the client-visible path string for a resolved local path."""
+        try:
+            relative = local_path.relative_to(self._storage_path.resolve())
+            return "/" + str(relative) if str(relative) != "." else "/"
+        except ValueError:
+            return "/"
 
     def list_folder(self, path: str):
         real_path = self._resolve(path)
@@ -94,37 +137,42 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
 
     def open(self, path: str, flags: int, attributes):
         real_path = self._resolve(path)
+        remote_path = self._to_remote_path(real_path)
         try:
-            binary_flags = os.O_RDONLY
-            if flags & os.O_WRONLY:
-                binary_flags = os.O_WRONLY | os.O_CREAT
-            if flags & os.O_RDWR:
-                binary_flags = os.O_RDWR | os.O_CREAT
-            if flags & os.O_APPEND:
-                binary_flags |= os.O_APPEND
-            if flags & os.O_TRUNC:
-                binary_flags |= os.O_TRUNC
+            is_write = bool(flags & (os.O_WRONLY | os.O_RDWR))
 
             mode = "rb"
-            if binary_flags & os.O_RDWR:
+            if flags & os.O_RDWR:
                 mode = "r+b"
-            elif binary_flags & os.O_WRONLY:
+            elif flags & os.O_WRONLY:
                 mode = "wb"
 
-            if (binary_flags & os.O_CREAT) and not real_path.exists():
+            if (flags & os.O_CREAT) and not real_path.exists():
                 real_path.touch()
 
             file_object = open(real_path, mode)
-            handle = KryosetSFTPHandle(file_object, flags)
-            return handle
+
+            if not is_write and self._audit_logger:
+                self._audit_logger.log_file_read(self._username, remote_path)
+
+            return KryosetSFTPHandle(
+                file_object,
+                flags,
+                audit_logger=self._audit_logger,
+                username=self._username,
+                remote_path=remote_path,
+                is_write=is_write,
+            )
         except OSError as error:
             logger.error("Cannot open %s: %s", real_path, error)
             return paramiko.SFTP_FAILURE
 
     def remove(self, path: str) -> int:
         real_path = self._resolve(path)
+        remote_path = self._to_remote_path(real_path)
         try:
             real_path.unlink()
+            self._audit_logger.log_file_delete(self._username, remote_path)
             return paramiko.SFTP_OK
         except OSError as error:
             logger.error("Cannot remove %s: %s", real_path, error)
@@ -135,6 +183,11 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         real_new = self._resolve(new_path)
         try:
             real_old.rename(real_new)
+            self._audit_logger.log_file_rename(
+                self._username,
+                self._to_remote_path(real_old),
+                self._to_remote_path(real_new),
+            )
             return paramiko.SFTP_OK
         except OSError as error:
             logger.error("Cannot rename %s -> %s: %s", real_old, real_new, error)
@@ -142,8 +195,10 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
 
     def mkdir(self, path: str, attributes) -> int:
         real_path = self._resolve(path)
+        remote_path = self._to_remote_path(real_path)
         try:
             real_path.mkdir(parents=False, exist_ok=False)
+            self._audit_logger.log_mkdir(self._username, remote_path)
             return paramiko.SFTP_OK
         except FileExistsError:
             return paramiko.SFTP_FAILURE
@@ -153,8 +208,10 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
 
     def rmdir(self, path: str) -> int:
         real_path = self._resolve(path)
+        remote_path = self._to_remote_path(real_path)
         try:
             real_path.rmdir()
+            self._audit_logger.log_rmdir(self._username, remote_path)
             return paramiko.SFTP_OK
         except OSError as error:
             logger.error("Cannot rmdir %s: %s", real_path, error)
@@ -162,28 +219,36 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
 
     def canonicalize(self, path: str) -> str:
         real_path = self._resolve(path)
-        try:
-            relative = real_path.relative_to(self._storage_path.resolve())
-            return "/" + str(relative) if str(relative) != "." else "/"
-        except ValueError:
-            return "/"
+        return self._to_remote_path(real_path)
 
 
 class KryosetServerInterface(paramiko.ServerInterface):
     """
     SSH server interface that handles authentication for Kryoset.
 
-    Accepts password authentication only; public-key authentication is
-    rejected so that all access goes through the user database.
+    Accepts password authentication only. Successful and failed attempts
+    are forwarded to the audit logger. The authenticated username is stored
+    so that the SFTP interface can retrieve it.
 
     Args:
         user_manager: A :class:`UserManager` instance for credential checks.
-        storage_path: Shared storage directory (passed to the SFTP subsystem).
+        storage_path: Shared storage directory.
+        audit_logger: Server-wide audit logger instance.
+        client_address: (host, port) tuple of the remote client.
     """
 
-    def __init__(self, user_manager: UserManager, storage_path: Path) -> None:
+    def __init__(
+        self,
+        user_manager: UserManager,
+        storage_path: Path,
+        audit_logger: AuditLogger,
+        client_address: tuple,
+    ) -> None:
         self._user_manager = user_manager
         self._storage_path = storage_path
+        self._audit_logger = audit_logger
+        self._client_ip: str = client_address[0]
+        self.authenticated_username: str = ""
 
     def check_channel_request(self, kind: str, channel_id: int) -> int:
         if kind == "session":
@@ -192,9 +257,12 @@ class KryosetServerInterface(paramiko.ServerInterface):
 
     def check_auth_password(self, username: str, password: str) -> int:
         if self._user_manager.authenticate(username, password):
+            self.authenticated_username = username
             logger.info("User '%s' authenticated successfully.", username)
+            self._audit_logger.log_auth_success(username, self._client_ip)
             return paramiko.AUTH_SUCCESSFUL
         logger.warning("Failed authentication attempt for user '%s'.", username)
+        self._audit_logger.log_auth_failure(username, self._client_ip)
         return paramiko.AUTH_FAILED
 
     def check_auth_publickey(self, username: str, key) -> int:
@@ -215,20 +283,21 @@ class KryosetServerInterface(paramiko.ServerInterface):
         return False
 
 
-def _make_sftp_interface(storage_path: Path):
+def _make_sftp_interface(storage_path: Path, audit_logger: AuditLogger):
     """
-    Return a factory function that creates a :class:`KryosetSFTPServerInterface`.
+    Return a factory class that creates a :class:`KryosetSFTPServerInterface`.
 
     Paramiko's ``set_subsystem_handler`` expects a class, not an instance, so
-    we return a subclass with the storage path baked in.
+    we return a subclass with the storage path and audit logger baked in.
 
     Args:
         storage_path: The shared storage directory to chroot into.
+        audit_logger: Server-wide audit logger instance.
     """
 
     class _BoundInterface(KryosetSFTPServerInterface):
         def __init__(self, server, *args, **kwargs):
-            super().__init__(server, storage_path, *args, **kwargs)
+            super().__init__(server, storage_path, audit_logger, *args, **kwargs)
 
     return _BoundInterface
 
@@ -258,18 +327,24 @@ class SFTPServer:
     The main Kryoset SFTP server.
 
     Listens for incoming SSH connections and spawns one handler thread per
-    client. Each connection is independently authenticated.
+    client. Each connection is independently authenticated and all events
+    are recorded by the shared :class:`AuditLogger`.
 
     Args:
         configuration: A validated :class:`Configuration` instance.
         user_manager: A :class:`UserManager` bound to the same configuration.
+        audit_logger: Audit logger instance (created automatically if omitted).
     """
 
     def __init__(
-        self, configuration: Configuration, user_manager: UserManager
+        self,
+        configuration: Configuration,
+        user_manager: UserManager,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         self._configuration = configuration
         self._user_manager = user_manager
+        self._audit_logger = audit_logger or AuditLogger()
         self._host_key = generate_host_key(configuration.host_key_path)
         self._server_socket: socket.socket | None = None
         self._running = False
@@ -326,10 +401,6 @@ class SFTPServer:
         """
         Manage a single client connection in its own thread.
 
-        Paramiko's ``set_subsystem_handler`` takes care of starting the SFTP
-        subsystem once the client requests it; this method only needs to drive
-        the transport until the session ends.
-
         Args:
             client_socket: The accepted client socket.
             client_address: (host, port) tuple of the remote client.
@@ -337,16 +408,24 @@ class SFTPServer:
         transport = paramiko.Transport(client_socket)
         transport.add_server_key(self._host_key)
 
-        sftp_interface = _make_sftp_interface(self._configuration.storage_path)
+        sftp_interface = _make_sftp_interface(
+            self._configuration.storage_path, self._audit_logger
+        )
         transport.set_subsystem_handler("sftp", paramiko.SFTPServer, sftp_interface)
 
         server_interface = KryosetServerInterface(
-            self._user_manager, self._configuration.storage_path
+            self._user_manager,
+            self._configuration.storage_path,
+            self._audit_logger,
+            client_address,
         )
         try:
             transport.start_server(server=server_interface)
             while transport.is_active():
                 threading.Event().wait(timeout=1)
+            username = server_interface.authenticated_username
+            if username:
+                self._audit_logger.log_disconnection(username, client_address[0])
         except Exception as error:
             logger.error("Error with client %s: %s", client_address, error)
         finally:

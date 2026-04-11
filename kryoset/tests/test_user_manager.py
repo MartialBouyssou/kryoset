@@ -1,10 +1,3 @@
-"""
-Tests for kryoset.core.user_manager.
-
-Covers user creation, deletion, authentication, enable/disable,
-password management and listing.
-"""
-
 import pytest
 
 from kryoset.core.user_manager import UserError, UserManager
