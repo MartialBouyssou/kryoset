@@ -1,11 +1,3 @@
-"""
-User management for Kryoset.
-
-Provides creation, deletion, authentication and listing of users whose
-credentials are stored inside the configuration file. Passwords are never
-stored in plain text: they are hashed with bcrypt before being saved.
-"""
-
 import secrets
 from typing import Optional
 

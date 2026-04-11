@@ -1,11 +1,3 @@
-"""
-Configuration management for Kryoset.
-
-Handles loading, saving and validating the server configuration stored
-in a JSON file. The configuration holds the storage path, network
-settings and the registered user list.
-"""
-
 import json
 import os
 from pathlib import Path

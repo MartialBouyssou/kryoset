@@ -1,11 +1,3 @@
-"""
-SFTP server implementation for Kryoset.
-
-Builds a password-authenticated SFTP server on top of Paramiko. Each
-authenticated user is chrooted to the configured storage path so that
-they cannot access files outside of it.
-"""
-
 import logging
 import os
 import socket
@@ -170,8 +162,11 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
 
     def canonicalize(self, path: str) -> str:
         real_path = self._resolve(path)
-        relative = real_path.relative_to(self._storage_path.resolve())
-        return "/" + str(relative) if str(relative) != "." else "/"
+        try:
+            relative = real_path.relative_to(self._storage_path.resolve())
+            return "/" + str(relative) if str(relative) != "." else "/"
+        except ValueError:
+            return "/"
 
 
 class KryosetServerInterface(paramiko.ServerInterface):
@@ -189,7 +184,6 @@ class KryosetServerInterface(paramiko.ServerInterface):
     def __init__(self, user_manager: UserManager, storage_path: Path) -> None:
         self._user_manager = user_manager
         self._storage_path = storage_path
-        self._authenticated_username: str | None = None
 
     def check_channel_request(self, kind: str, channel_id: int) -> int:
         if kind == "session":
@@ -198,7 +192,6 @@ class KryosetServerInterface(paramiko.ServerInterface):
 
     def check_auth_password(self, username: str, password: str) -> int:
         if self._user_manager.authenticate(username, password):
-            self._authenticated_username = username
             logger.info("User '%s' authenticated successfully.", username)
             return paramiko.AUTH_SUCCESSFUL
         logger.warning("Failed authentication attempt for user '%s'.", username)
@@ -210,18 +203,34 @@ class KryosetServerInterface(paramiko.ServerInterface):
     def get_allowed_auths(self, username: str) -> str:
         return "password"
 
-    def check_channel_subsystem_request(self, channel, name: str) -> bool:
-        if name == "sftp":
-            self._sftp_server = paramiko.SFTPServer(
-                channel,
-                name,
-                server=self,
-                sftp_si=lambda srv, *args, **kw: KryosetSFTPServerInterface(
-                    srv, self._storage_path, *args, **kw
-                ),
-            )
-            return True
+    def check_channel_pty_request(
+        self, channel, term, width, height, pixelwidth, pixelheight, modes
+    ) -> bool:
         return False
+
+    def check_channel_shell_request(self, channel) -> bool:
+        return False
+
+    def check_channel_exec_request(self, channel, command: bytes) -> bool:
+        return False
+
+
+def _make_sftp_interface(storage_path: Path):
+    """
+    Return a factory function that creates a :class:`KryosetSFTPServerInterface`.
+
+    Paramiko's ``set_subsystem_handler`` expects a class, not an instance, so
+    we return a subclass with the storage path baked in.
+
+    Args:
+        storage_path: The shared storage directory to chroot into.
+    """
+
+    class _BoundInterface(KryosetSFTPServerInterface):
+        def __init__(self, server, *args, **kwargs):
+            super().__init__(server, storage_path, *args, **kwargs)
+
+    return _BoundInterface
 
 
 def generate_host_key(key_path: Path) -> paramiko.RSAKey:
@@ -317,25 +326,27 @@ class SFTPServer:
         """
         Manage a single client connection in its own thread.
 
+        Paramiko's ``set_subsystem_handler`` takes care of starting the SFTP
+        subsystem once the client requests it; this method only needs to drive
+        the transport until the session ends.
+
         Args:
             client_socket: The accepted client socket.
             client_address: (host, port) tuple of the remote client.
         """
         transport = paramiko.Transport(client_socket)
         transport.add_server_key(self._host_key)
+
+        sftp_interface = _make_sftp_interface(self._configuration.storage_path)
+        transport.set_subsystem_handler("sftp", paramiko.SFTPServer, sftp_interface)
+
         server_interface = KryosetServerInterface(
             self._user_manager, self._configuration.storage_path
         )
         try:
             transport.start_server(server=server_interface)
-            channel = transport.accept(timeout=30)
-            if channel is None:
-                logger.warning(
-                    "No channel opened from %s, closing.", client_address
-                )
-                return
             while transport.is_active():
-                threading.Event().wait(1)
+                threading.Event().wait(timeout=1)
         except Exception as error:
             logger.error("Error with client %s: %s", client_address, error)
         finally:
