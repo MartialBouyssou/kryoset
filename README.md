@@ -49,8 +49,6 @@
 **v0.3.0+** (future)
 - [ ] REST API with HTTPS
 - [ ] Web dashboard for user management
-- [ ] Prometheus metrics export
-- [ ] Automatic backups to cloud storage
 
 ---
 
