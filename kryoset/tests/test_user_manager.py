@@ -128,3 +128,24 @@ class TestGenerateTemporaryPassword:
     def test_generate_for_nonexistent_user_raises(self, user_manager: UserManager):
         with pytest.raises(UserError, match="does not exist"):
             user_manager.generate_temporary_password("ghost")
+
+
+class TestAdminRole:
+    def test_user_is_not_admin_by_default(self, user_manager_with_alice: UserManager):
+        assert not user_manager_with_alice.is_admin("alice")
+
+    def test_grant_admin_role(self, user_manager_with_alice: UserManager):
+        user_manager_with_alice.set_admin("alice", admin=True)
+        assert user_manager_with_alice.is_admin("alice")
+
+    def test_revoke_admin_role(self, user_manager_with_alice: UserManager):
+        user_manager_with_alice.set_admin("alice", admin=True)
+        user_manager_with_alice.set_admin("alice", admin=False)
+        assert not user_manager_with_alice.is_admin("alice")
+
+    def test_set_admin_on_nonexistent_user_raises(self, user_manager: UserManager):
+        with pytest.raises(UserError, match="does not exist"):
+            user_manager.set_admin("ghost", admin=True)
+
+    def test_is_admin_returns_false_for_nonexistent_user(self, user_manager: UserManager):
+        assert not user_manager.is_admin("ghost")

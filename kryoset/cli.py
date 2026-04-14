@@ -268,3 +268,357 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@cli.group()
+def group() -> None:
+    """Manage Kryoset groups."""
+
+
+@group.command("create")
+@click.argument("group_name")
+@click.option("--config", default=None)
+def group_create(group_name: str, config: str | None) -> None:
+    """Create a new empty group GROUP_NAME."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.create_group(group_name)
+        click.echo(f"[ok] Group '{group_name}' created.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@group.command("delete")
+@click.argument("group_name")
+def group_delete(group_name: str) -> None:
+    """Delete group GROUP_NAME and all its rules."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.delete_group(group_name)
+        click.echo(f"[ok] Group '{group_name}' deleted.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@group.command("list")
+def group_list() -> None:
+    """List all groups and their members."""
+    from kryoset.core.permission_store import PermissionStore
+    store = PermissionStore()
+    store.initialize()
+    groups = store.list_groups()
+    if not groups:
+        click.echo("No groups.")
+        return
+    for grp in groups:
+        members = ", ".join(grp["members"]) if grp["members"] else "(empty)"
+        click.echo(f"  {grp['name']}: {members}")
+
+
+@group.command("add-member")
+@click.argument("group_name")
+@click.argument("username")
+def group_add_member(group_name: str, username: str) -> None:
+    """Add USERNAME to GROUP_NAME."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.add_group_member(group_name, username)
+        click.echo(f"[ok] '{username}' added to '{group_name}'.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@group.command("remove-member")
+@click.argument("group_name")
+@click.argument("username")
+def group_remove_member(group_name: str, username: str) -> None:
+    """Remove USERNAME from GROUP_NAME."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.remove_group_member(group_name, username)
+        click.echo(f"[ok] '{username}' removed from '{group_name}'.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@cli.group()
+def perm() -> None:
+    """Manage path permissions."""
+
+
+@perm.command("add")
+@click.option("--path", required=True, help="Storage path (e.g. /photos).")
+@click.option("--user", "subject_user", default=None, help="Grant to this user.")
+@click.option("--group", "subject_group", default=None, help="Grant to this group.")
+@click.option("--permissions", "-p", required=True, multiple=True,
+              help="Permission flags: LIST, PREVIEW, DOWNLOAD, UPLOAD, COPY, RENAME, MOVE, DELETE, MANAGE_PERMS, SHARE.")
+@click.option("--expires", default=None, help="Expiry: ISO date or e.g. '24h', '7d'.")
+@click.option("--password", is_flag=True, default=False, help="Prompt for a path password.")
+@click.option("--quota", default=None, help="Upload quota, e.g. 500MB, 2GB.")
+@click.option("--download-limit", default=None, type=int, help="Max downloads.")
+@click.option("--ip-whitelist", default=None, help="Comma-separated allowed IPs/CIDRs.")
+@click.option("--ip-blacklist", default=None, help="Comma-separated denied IPs/CIDRs.")
+@click.option("--can-delegate", is_flag=True, default=False, help="Allow subject to manage sub-perms.")
+@click.option("--hours", default=None, help="Active hours, e.g. 'mon-fri:09-18'.")
+def perm_add(path, subject_user, subject_group, permissions, expires, password,
+             quota, download_limit, ip_whitelist, ip_blacklist, can_delegate, hours) -> None:
+    """Add a permission rule on PATH."""
+    import re
+    from datetime import datetime, timedelta
+    import bcrypt as _bcrypt
+    from kryoset.core.permission_store import PermissionStore
+    from kryoset.core.permissions import Permission, PermissionRule, TimeWindow
+
+    if not subject_user and not subject_group:
+        click.echo("[error] Specify --user or --group.", err=True)
+        raise SystemExit(1)
+    if subject_user and subject_group:
+        click.echo("[error] Specify only one of --user or --group.", err=True)
+        raise SystemExit(1)
+
+    subject_type = "user" if subject_user else "group"
+    subject_id = subject_user or subject_group
+
+    try:
+        perm_flags = Permission.from_names(list(permissions))
+    except ValueError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+    expires_at = None
+    if expires:
+        match = re.fullmatch(r"(\d+)([hd])", expires.strip())
+        if match:
+            amount, unit = int(match.group(1)), match.group(2)
+            delta = timedelta(hours=amount) if unit == "h" else timedelta(days=amount)
+            expires_at = datetime.utcnow() + delta
+        else:
+            expires_at = datetime.fromisoformat(expires)
+
+    password_hash = None
+    if password:
+        pwd = getpass.getpass("Path password: ")
+        confirm = getpass.getpass("Confirm: ")
+        if pwd != confirm:
+            click.echo("[error] Passwords do not match.", err=True)
+            raise SystemExit(1)
+        password_hash = _bcrypt.hashpw(pwd.encode(), _bcrypt.gensalt()).decode()
+
+    quota_bytes = None
+    if quota:
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(MB|GB|KB|B)", quota.upper())
+        if not match:
+            click.echo("[error] Invalid quota format. Use e.g. 500MB or 2GB.", err=True)
+            raise SystemExit(1)
+        amount = float(match.group(1))
+        unit_map = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}
+        quota_bytes = int(amount * unit_map[match.group(2)])
+
+    time_windows = []
+    if hours:
+        day_map = {"mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6, "sun": 7}
+        try:
+            days_part, hours_part = hours.lower().split(":")
+            if "-" in days_part:
+                start_day, end_day = days_part.split("-")
+                start_n, end_n = day_map[start_day], day_map[end_day]
+                days = list(range(start_n, end_n + 1))
+            else:
+                days = [day_map[days_part]]
+            hour_from, hour_to = map(int, hours_part.split("-"))
+            time_windows = [TimeWindow(days=days, hour_from=hour_from, hour_to=hour_to)]
+        except (KeyError, ValueError):
+            click.echo("[error] Invalid --hours format. Use e.g. 'mon-fri:09-18'.", err=True)
+            raise SystemExit(1)
+
+    rule = PermissionRule(
+        subject_type=subject_type,
+        subject_id=subject_id,
+        path=path,
+        permissions=perm_flags,
+        password_hash=password_hash,
+        expires_at=expires_at,
+        time_windows=time_windows,
+        upload_quota_bytes=quota_bytes,
+        download_limit=download_limit,
+        ip_whitelist=[ip.strip() for ip in ip_whitelist.split(",")] if ip_whitelist else [],
+        ip_blacklist=[ip.strip() for ip in ip_blacklist.split(",")] if ip_blacklist else [],
+        can_delegate=can_delegate,
+    )
+
+    store = PermissionStore()
+    store.initialize()
+    rule_id = store.add_rule(rule)
+    click.echo(f"[ok] Rule #{rule_id} added: {subject_type} '{subject_id}' → {path} [{', '.join(perm_flags.to_names())}]")
+
+
+@perm.command("list")
+@click.option("--path", default=None, help="Filter by path prefix.")
+def perm_list(path: str | None) -> None:
+    """List permission rules."""
+    from kryoset.core.permission_store import PermissionStore
+    store = PermissionStore()
+    store.initialize()
+    rules = store.list_rules(path_prefix=path)
+    if not rules:
+        click.echo("No rules found.")
+        return
+    click.echo(f"{'#':<5} {'Type':<6} {'Subject':<15} {'Path':<20} {'Permissions':<40} {'Expires'}")
+    click.echo("-" * 100)
+    for rule in rules:
+        expires = rule.expires_at.strftime("%Y-%m-%d") if rule.expires_at else "never"
+        perms = ", ".join(rule.permissions.to_names()) or "NONE"
+        click.echo(
+            f"{rule.rule_id:<5} {rule.subject_type:<6} {rule.subject_id:<15} "
+            f"{rule.path:<20} {perms:<40} {expires}"
+        )
+
+
+@perm.command("remove")
+@click.argument("rule_id", type=int)
+def perm_remove(rule_id: int) -> None:
+    """Remove permission rule RULE_ID."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.remove_rule(rule_id)
+        click.echo(f"[ok] Rule #{rule_id} removed.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@perm.command("check")
+@click.argument("username")
+@click.argument("path")
+def perm_check(username: str, path: str) -> None:
+    """Show effective permissions for USERNAME on PATH."""
+    from kryoset.core.permission_store import PermissionStore
+    store = PermissionStore()
+    store.initialize()
+    effective, password_required = store.resolve_permissions(username, path)
+    perms = ", ".join(effective.to_names()) or "NONE"
+    click.echo(f"User '{username}' on '{path}': [{perms}]")
+    if password_required:
+        click.echo("  ⚠ A path password is required.")
+
+
+@cli.group()
+def share() -> None:
+    """Manage share links (server-side admin)."""
+
+
+@share.command("create")
+@click.option("--path", required=True, help="Path to share.")
+@click.option("--user", "created_by", required=True, help="Creator username.")
+@click.option("--expires", default=None, help="e.g. '24h', '7d' or ISO datetime.")
+@click.option("--download-limit", default=None, type=int, help="Max downloads.")
+@click.option("--permissions", "-p", multiple=True, default=["DOWNLOAD"])
+@click.option("--password", is_flag=True, default=False, help="Prompt for link password.")
+def share_create(path, created_by, expires, download_limit, permissions, password) -> None:
+    """Create a share link for PATH (admin, server-side)."""
+    import re
+    from datetime import datetime, timedelta
+    import bcrypt as _bcrypt
+    from kryoset.core.permission_store import PermissionStore
+    from kryoset.core.permissions import Permission
+
+    try:
+        perm_flags = Permission.from_names(list(permissions))
+    except ValueError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+    expires_at = None
+    if expires:
+        match = re.fullmatch(r"(\d+)([hd])", expires.strip())
+        if match:
+            amount, unit = int(match.group(1)), match.group(2)
+            delta = timedelta(hours=amount) if unit == "h" else timedelta(days=amount)
+            expires_at = datetime.utcnow() + delta
+        else:
+            expires_at = datetime.fromisoformat(expires)
+
+    plain_password = None
+    if password:
+        plain_password = getpass.getpass("Link password: ")
+
+    store = PermissionStore()
+    store.initialize()
+    link = store.create_share_link(
+        created_by=created_by,
+        path=path,
+        permissions=perm_flags,
+        expires_at=expires_at,
+        download_limit=download_limit,
+        password=plain_password,
+    )
+    click.echo(f"[ok] Share created.")
+    click.echo(f"     Token   : {link.token}")
+    click.echo(f"     Path    : {link.path}")
+    click.echo(f"     Expires : {link.expires_at or 'never'}")
+    click.echo(f"     DL limit: {link.download_limit or 'unlimited'}")
+
+
+@share.command("list")
+@click.option("--user", "created_by", default=None, help="Filter by creator.")
+def share_list(created_by: str | None) -> None:
+    """List active share links."""
+    from kryoset.core.permission_store import PermissionStore
+    store = PermissionStore()
+    store.initialize()
+    links = store.list_share_links(created_by=created_by)
+    if not links:
+        click.echo("No share links.")
+        return
+    for link in links:
+        status = "valid" if link.is_valid() else "expired/exhausted"
+        click.echo(
+            f"  [{status}] {link.token[:16]}… → {link.path} "
+            f"(by {link.created_by}, {link.download_count}/{link.download_limit or '∞'} DL)"
+        )
+
+
+@share.command("revoke")
+@click.argument("token")
+def share_revoke(token: str) -> None:
+    """Revoke a share link by TOKEN."""
+    from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    store = PermissionStore()
+    store.initialize()
+    try:
+        store.revoke_share_link(token)
+        click.echo(f"[ok] Share link '{token}' revoked.")
+    except PermissionStoreError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@user.command("set-admin")
+@click.argument("username")
+@click.option("--revoke", is_flag=True, default=False, help="Revoke admin instead of granting.")
+@click.option("--config", default=None)
+def user_set_admin(username: str, revoke: bool, config: str | None) -> None:
+    """Grant or revoke admin role for USERNAME."""
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    try:
+        user_manager.set_admin(username, admin=not revoke)
+        action = "revoked from" if revoke else "granted to"
+        click.echo(f"[ok] Admin role {action} '{username}'.")
+    except UserError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)

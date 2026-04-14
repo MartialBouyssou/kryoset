@@ -27,6 +27,16 @@
 - **Audit logging** — track authentication and file operations
   - Logs stored in `~/.kryoset/logs/`
   - Follow logs in real-time with `kryoset logs --follow`
+- **Granular permissions engine** — per user/group rules on any path
+  - 10 permission flags (LIST, DOWNLOAD, UPLOAD, DELETE, SHARE, etc.)
+  - Rule constraints: expiry, active hours, IP whitelist/blacklist, delegation
+  - Effective permission resolution across parent/child paths
+- **Groups and delegation** — reusable access management
+  - Create groups and assign members
+  - Grant rules to users or groups
+  - Delegate permission administration on sub-paths
+- **Share link store** — create and revoke token-based links
+  - Optional expiry, password and download limit metadata
 - **Cross-platform** — Linux and Windows (Python 3.11+)
 
 ## Roadmap
@@ -140,6 +150,16 @@ sftp -P 2222 alice@localhost
 # sftp> exit
 ```
 
+### 5 — Add a first permission rule
+
+```bash
+# Give alice read-only access to /projects
+kryoset perm add --path /projects --user alice -p LIST -p PREVIEW -p DOWNLOAD
+
+# Check effective permissions
+kryoset perm check alice /projects
+```
+
 ---
 
 ## CLI Reference
@@ -182,6 +202,72 @@ kryoset user change-password <USERNAME> [--config PATH]
 
 kryoset user reset-password <USERNAME> [--config PATH]
     Generate a random temporary password and display it.
+
+kryoset user set-admin <USERNAME> [--revoke] [--config PATH]
+  Grant or revoke admin role.
+```
+
+### Group Management
+
+```bash
+kryoset group create <GROUP_NAME>
+  Create an empty group.
+
+kryoset group delete <GROUP_NAME>
+  Delete a group and its associated membership/rules.
+
+kryoset group list
+  List groups and members.
+
+kryoset group add-member <GROUP_NAME> <USERNAME>
+  Add user to a group.
+
+kryoset group remove-member <GROUP_NAME> <USERNAME>
+  Remove user from a group.
+```
+
+### Permission Management
+
+```bash
+kryoset perm add \
+  --path /PATH \
+  (--user USERNAME | --group GROUP_NAME) \
+  -p FLAG [-p FLAG ...] \
+  [--expires 24h|7d|ISO_DATE] \
+  [--password] \
+  [--quota 500MB|2GB] \
+  [--download-limit N] \
+  [--ip-whitelist CIDR[,CIDR...]] \
+  [--ip-blacklist CIDR[,CIDR...]] \
+  [--can-delegate] \
+  [--hours mon-fri:09-18]
+
+kryoset perm list [--path /PREFIX]
+  List rules (optionally filtered by path prefix).
+
+kryoset perm remove <RULE_ID>
+  Remove a rule by ID.
+
+kryoset perm check <USERNAME> <PATH>
+  Show effective permissions on a path.
+```
+
+### Share Links
+
+```bash
+kryoset share create \
+  --path /PATH \
+  --user USERNAME \
+  [-p DOWNLOAD] [-p LIST] \
+  [--expires 24h|7d|ISO_DATE] \
+  [--download-limit N] \
+  [--password]
+
+kryoset share list [--user USERNAME]
+  List share links.
+
+kryoset share revoke <TOKEN>
+  Revoke a share link.
 ```
 
 ### Auditing & Logs
@@ -226,7 +312,9 @@ Kryoset stores its configuration and state in `~/.kryoset/`:
 ~/.kryoset/
 ├── config.json          Main configuration (storage path, port, users)
 ├── host_key             Server SSH host key (generated on first start)
-└── user_passwords       Password hashes for all users
+├── permissions.db       SQLite database (groups, rules, share links)
+└── logs/
+  └── kryoset.log      Audit log (rotated daily)
 ```
 
 All files are protected with mode `600` (read/write owner only).
@@ -253,11 +341,33 @@ kryoset logs --filter AUTH_FAILURE
 kryoset logs -n 100
 ```
 
+Common event labels in logs:
+- `AUTH_SUCCESS`, `AUTH_FAILURE`
+- `CONNECT`, `DISCONNECT`
+- `FILE_READ`, `FILE_WRITE`, `FILE_DELETE`, `FILE_RENAME`
+- `MKDIR`, `RMDIR`
+
+Example:
+
+```text
+[2026-04-14 20:31:08] [AUTH_SUCCESS  ] user=alice ip=192.168.1.44
+[2026-04-14 20:31:12] [FILE_READ     ] user=alice path=/projects/spec.pdf
+[2026-04-14 20:31:16] [FILE_WRITE    ] user=alice path=/projects/notes.txt
+```
+
+---
+
+## Permissions Guide
+
+Detailed permissions model, practical examples, delegation workflows, and control-channel usage are documented in:
+
+- [PERMISSION.md](PERMISSION.md)
+
 ---
 
 ## Running Tests
 
-Run the full test suite (59 tests):
+Run the full test suite:
 
 ```bash
 pytest                 # Run all tests
