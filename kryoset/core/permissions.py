@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from kryoset.core.timezone import now_utc, parse_iso
+
 
 class Permission(enum.Flag):
     """
@@ -53,7 +55,11 @@ class Permission(enum.Flag):
 
     def to_names(self) -> list[str]:
         """Return the list of active flag names for this value."""
-        return [flag.name for flag in Permission if flag in self and flag != Permission.NONE]
+        return [
+            flag.name
+            for flag in Permission
+            if flag in self and flag != Permission.NONE
+        ]
 
 
 PRESET_READ_ONLY = Permission.LIST | Permission.PREVIEW | Permission.DOWNLOAD
@@ -80,12 +86,13 @@ class TimeWindow:
 
     def is_active_now(self, when: Optional[datetime] = None) -> bool:
         """
-        Return True if *when* (default: now) falls inside this window.
+        Return True if *when* (default: now Paris time) falls inside this window.
 
         Args:
-            when: Datetime to check. Defaults to the current local time.
+            when: Datetime to check. Defaults to the current Paris local time.
         """
-        now = when or datetime.now()
+        from kryoset.core.timezone import now_paris, to_paris
+        now = to_paris(when) if when else now_paris()
         return now.isoweekday() in self.days and self.hour_from <= now.hour <= self.hour_to
 
     def to_dict(self) -> dict:
@@ -105,27 +112,21 @@ class PermissionRule:
     """
     A single access-control rule stored in the database.
 
-    A rule grants a set of :class:`Permission` flags to one subject
-    (a user or a group) on one storage path. Optional constraints
-    (expiry, time windows, IP filters, quota, download limit, password)
-    can further restrict when the rule is effective.
-
     Args:
         rule_id: Database primary key (None before first save).
         subject_type: ``"user"`` or ``"group"``.
         subject_id: Username or group name.
-        path: Absolute storage path the rule applies to (e.g. ``"/photos"``).
+        path: Absolute storage path the rule applies to.
         permissions: Combined permission flags.
         password_hash: bcrypt hash required before access, or None.
-        expires_at: UTC datetime after which the rule is inactive, or None.
-        time_windows: List of recurring windows during which the rule is active.
-            Empty list means always active.
+        expires_at: Timezone-aware UTC datetime after which the rule is inactive.
+        time_windows: Recurring windows during which the rule is active (Paris TZ).
         upload_quota_bytes: Maximum cumulative upload in bytes, or None.
         download_limit: Maximum number of individual downloads, or None.
         ip_whitelist: If non-empty, only these IPs/CIDRs may use this rule.
-        ip_blacklist: IPs/CIDRs that are always denied, regardless of whitelist.
-        can_delegate: Whether the subject may grant sub-permissions inside *path*.
-        created_at: Creation timestamp.
+        ip_blacklist: IPs/CIDRs that are always denied.
+        can_delegate: Whether the subject may grant sub-permissions inside path.
+        created_at: Creation timestamp (timezone-aware UTC).
     """
 
     subject_type: str
@@ -147,7 +148,15 @@ class PermissionRule:
         """Return True if the rule has passed its expiry date."""
         if self.expires_at is None:
             return False
-        return (when or datetime.utcnow()) > self.expires_at
+        reference = when or now_utc()
+        if reference.tzinfo is None:
+            from kryoset.core.timezone import UTC_TZ
+            reference = reference.replace(tzinfo=UTC_TZ)
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            from kryoset.core.timezone import UTC_TZ
+            expires = expires.replace(tzinfo=UTC_TZ)
+        return reference > expires
 
     def is_time_window_active(self, when: Optional[datetime] = None) -> bool:
         """Return True if no time windows are set or at least one is currently active."""
@@ -181,11 +190,12 @@ class PermissionRule:
         return False
 
     def is_currently_effective(
-        self, ip_address: Optional[str] = None, when: Optional[datetime] = None
+        self,
+        ip_address: Optional[str] = None,
+        when: Optional[datetime] = None,
     ) -> bool:
         """
-        Return True if this rule is currently active (not expired, in time
-        window, and IP is allowed).
+        Return True if this rule is currently active.
 
         Args:
             ip_address: Client IP to check against white/blacklists.
@@ -201,9 +211,7 @@ class PermissionRule:
 
     def specificity(self) -> tuple:
         """
-        Return a sort key: user rules beat group rules; deeper paths beat
-        shallower ones.
-
+        Return a sort key: user rules beat group rules; deeper paths beat shallower.
         Higher tuple values are resolved first.
         """
         subject_priority = 1 if self.subject_type == "user" else 0
@@ -216,20 +224,17 @@ class ShareLink:
     """
     A time-limited, token-based access grant for one path.
 
-    Share links allow unauthenticated (or differently-authenticated) access
-    to a specific file or directory without requiring a Kryoset account.
-
     Args:
         token: Cryptographically random URL-safe token.
         created_by: Username of the share creator.
         path: Absolute storage path this link grants access to.
-        permissions: Allowed operations (typically DOWNLOAD only).
-        expires_at: UTC datetime after which the link is invalid, or None.
-        download_limit: Max number of downloads before auto-revocation, or None.
+        permissions: Allowed operations.
+        expires_at: Timezone-aware UTC datetime, or None.
+        download_limit: Max downloads before auto-revocation, or None.
         download_count: Current download counter.
         password_hash: bcrypt hash required to use the link, or None.
         link_id: Database primary key (None before first save).
-        created_at: Creation timestamp.
+        created_at: Creation timestamp (timezone-aware UTC).
     """
 
     token: str
@@ -245,8 +250,17 @@ class ShareLink:
 
     def is_valid(self, when: Optional[datetime] = None) -> bool:
         """Return True if the link has not expired and the download limit is not reached."""
-        if self.expires_at and (when or datetime.utcnow()) > self.expires_at:
-            return False
+        if self.expires_at:
+            reference = when or now_utc()
+            if reference.tzinfo is None:
+                from kryoset.core.timezone import UTC_TZ
+                reference = reference.replace(tzinfo=UTC_TZ)
+            expires = self.expires_at
+            if expires.tzinfo is None:
+                from kryoset.core.timezone import UTC_TZ
+                expires = expires.replace(tzinfo=UTC_TZ)
+            if reference > expires:
+                return False
         if self.download_limit is not None and self.download_count >= self.download_limit:
             return False
         return True

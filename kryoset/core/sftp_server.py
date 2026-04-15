@@ -8,10 +8,12 @@ from typing import Optional
 import paramiko
 
 from kryoset.core.audit_logger import AuditLogger
+from kryoset.core.quota import QuotaError, QuotaManager
+from kryoset.core.totp import TOTPManager
 from kryoset.core.configuration import Configuration
 from kryoset.core.control_channel import ControlChannel, ControlChannelError
 from kryoset.core.permission_store import PermissionStore
-from kryoset.core.permissions import Permission
+from kryoset.core.permissions import Permission, PRESET_OWNER
 from kryoset.core.user_manager import UserManager
 
 logger = logging.getLogger(__name__)
@@ -88,12 +90,14 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         storage_path: Path,
         audit_logger: AuditLogger,
         permission_store: PermissionStore,
+        quota_manager: Optional["QuotaManager"] = None,
         *args,
         **kwargs,
     ) -> None:
         self._storage_path = storage_path
         self._audit_logger = audit_logger
         self._permission_store = permission_store
+        self._quota_manager = quota_manager
         self._username: str = getattr(server, "authenticated_username", "")
         self._is_admin: bool = getattr(server, "is_admin", False)
         self._client_ip: str = getattr(server, "client_ip", "")
@@ -123,7 +127,12 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return "/"
 
     def _effective_permissions(self, remote_path: str) -> Permission:
-        """Return the effective permissions for the current user on *remote_path*."""
+        """Return the effective permissions for the current user on *remote_path*.
+
+        Admins always receive full permissions regardless of stored rules.
+        """
+        if self._is_admin:
+            return PRESET_OWNER
         perms, _ = self._permission_store.resolve_permissions(
             self._username, remote_path, self._client_ip
         )
@@ -383,14 +392,17 @@ class KryosetServerInterface(paramiko.ServerInterface):
         audit_logger: AuditLogger,
         permission_store: PermissionStore,
         client_address: tuple,
+        totp_manager: Optional[TOTPManager] = None,
     ) -> None:
         self._user_manager = user_manager
         self._storage_path = storage_path
         self._audit_logger = audit_logger
         self._permission_store = permission_store
+        self._totp_manager = totp_manager
         self.client_ip: str = client_address[0]
         self.authenticated_username: str = ""
         self.is_admin: bool = False
+        self._password_authenticated: bool = False
 
     def check_channel_request(self, kind: str, channel_id: int) -> int:
         if kind == "session":
@@ -401,18 +413,30 @@ class KryosetServerInterface(paramiko.ServerInterface):
         if self._user_manager.authenticate(username, password):
             self.authenticated_username = username
             self.is_admin = self._user_manager.is_admin(username)
+            self._password_authenticated = True
             logger.info("User '%s' authenticated (admin=%s).", username, self.is_admin)
             self._audit_logger.log_auth_success(username, self.client_ip)
+            if self._totp_manager and self._totp_manager.is_enabled(username):
+                return paramiko.AUTH_PARTIALLY_SUCCESSFUL
             return paramiko.AUTH_SUCCESSFUL
         logger.warning("Failed auth for '%s'.", username)
         self._audit_logger.log_auth_failure(username, self.client_ip)
+        return paramiko.AUTH_FAILED
+
+    def check_auth_interactive(self, username: str, submethods: str) -> int:
+        return paramiko.AUTH_SUCCESSFUL
+
+    def check_auth_gssapi_with_mic(self, username: str, gss_authenticated: int, cc_file: str) -> int:
+        return paramiko.AUTH_FAILED
+
+    def check_auth_gssapi_keyex(self, username: str, gss_authenticated: int, cc_file: str) -> int:
         return paramiko.AUTH_FAILED
 
     def check_auth_publickey(self, username: str, key) -> int:
         return paramiko.AUTH_FAILED
 
     def get_allowed_auths(self, username: str) -> str:
-        return "password"
+        return "password,keyboard-interactive"
 
     def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes) -> bool:
         return False
@@ -428,10 +452,11 @@ def _make_sftp_interface(
     storage_path: Path,
     audit_logger: AuditLogger,
     permission_store: PermissionStore,
+    quota_manager: "QuotaManager",
 ):
     class _BoundInterface(KryosetSFTPServerInterface):
         def __init__(self, server, *args, **kwargs):
-            super().__init__(server, storage_path, audit_logger, permission_store, *args, **kwargs)
+            super().__init__(server, storage_path, audit_logger, permission_store, quota_manager, *args, **kwargs)
     return _BoundInterface
 
 
@@ -469,6 +494,8 @@ class SFTPServer:
         self._user_manager = user_manager
         self._audit_logger = audit_logger or AuditLogger()
         self._permission_store = permission_store or PermissionStore()
+        self._quota_manager = QuotaManager(user_manager, configuration.storage_path)
+        self._totp_manager = TOTPManager(user_manager)
         self._host_key = generate_host_key(configuration.host_key_path)
         self._server_socket = None
         self._running = False
@@ -518,6 +545,7 @@ class SFTPServer:
             self._configuration.storage_path,
             self._audit_logger,
             self._permission_store,
+            self._quota_manager,
         )
         transport.set_subsystem_handler("sftp", paramiko.SFTPServer, sftp_interface)
         server_interface = KryosetServerInterface(
@@ -526,6 +554,7 @@ class SFTPServer:
             self._audit_logger,
             self._permission_store,
             client_address,
+            totp_manager=self._totp_manager,
         )
         try:
             transport.start_server(server=server_interface)

@@ -622,3 +622,150 @@ def user_set_admin(username: str, revoke: bool, config: str | None) -> None:
     except UserError as error:
         click.echo(f"[error] {error}", err=True)
         raise SystemExit(1)
+
+
+@user.group("totp")
+def user_totp() -> None:
+    """Manage TOTP two-factor authentication for a user."""
+
+
+@user_totp.command("setup")
+@click.argument("username")
+@click.option("--config", default=None)
+def totp_setup(username: str, config: str | None) -> None:
+    """Generate a TOTP secret for USERNAME and display the QR code URI."""
+    from kryoset.core.totp import TOTPManager, TOTPError
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    totp = TOTPManager(user_manager)
+    try:
+        secret = totp.generate_secret(username)
+        uri = totp.get_provisioning_uri(username)
+        click.echo(f"[ok] TOTP secret generated for '{username}'.")
+        click.echo(f"     Secret : {secret}")
+        click.echo(f"     URI    : {uri}")
+        click.echo("")
+        click.echo("Scan the URI with your authenticator app, then run:")
+        click.echo(f"  kryoset user totp confirm {username} <code>")
+    except TOTPError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@user_totp.command("confirm")
+@click.argument("username")
+@click.argument("code")
+@click.option("--config", default=None)
+def totp_confirm(username: str, code: str, config: str | None) -> None:
+    """Confirm TOTP setup for USERNAME with a 6-digit CODE from the app."""
+    from kryoset.core.totp import TOTPManager, TOTPError
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    totp = TOTPManager(user_manager)
+    try:
+        totp.confirm_setup(username, code)
+        click.echo(f"[ok] TOTP enabled for '{username}'. Two-factor auth is now active.")
+    except TOTPError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@user_totp.command("disable")
+@click.argument("username")
+@click.option("--config", default=None)
+def totp_disable(username: str, config: str | None) -> None:
+    """Disable TOTP for USERNAME."""
+    from kryoset.core.totp import TOTPManager, TOTPError
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    totp = TOTPManager(user_manager)
+    try:
+        totp.disable(username)
+        click.echo(f"[ok] TOTP disabled for '{username}'.")
+    except TOTPError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@user_totp.command("status")
+@click.argument("username")
+@click.option("--config", default=None)
+def totp_status(username: str, config: str | None) -> None:
+    """Show TOTP status for USERNAME."""
+    from kryoset.core.totp import TOTPManager
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    totp = TOTPManager(user_manager)
+    enabled = totp.is_enabled(username)
+    status = "enabled" if enabled else "disabled"
+    click.echo(f"TOTP for '{username}': {status}")
+
+
+@user.group("quota")
+def user_quota() -> None:
+    """Manage per-user storage quotas."""
+
+
+@user_quota.command("set")
+@click.argument("username")
+@click.argument("size")
+@click.option("--config", default=None)
+def quota_set(username: str, size: str, config: str | None) -> None:
+    """Set storage quota for USERNAME. SIZE: e.g. 10GB, 500MB, none."""
+    import re
+    from kryoset.core.quota import QuotaManager
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+
+    if size.lower() == "none":
+        quota_bytes = None
+    else:
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)", size.upper())
+        if not match:
+            click.echo("[error] Invalid size. Use e.g. 10GB, 500MB or 'none'.", err=True)
+            raise SystemExit(1)
+        amount = float(match.group(1))
+        unit_map = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+        quota_bytes = int(amount * unit_map[match.group(2)])
+
+    try:
+        quota_manager.set_quota(username, quota_bytes)
+        if quota_bytes is None:
+            click.echo(f"[ok] Quota removed for '{username}' (unlimited).")
+        else:
+            click.echo(f"[ok] Quota for '{username}' set to {size}.")
+    except ValueError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+@user_quota.command("status")
+@click.argument("username")
+@click.option("--config", default=None)
+def quota_status(username: str, config: str | None) -> None:
+    """Show storage quota usage for USERNAME."""
+    from kryoset.core.quota import QuotaManager
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+    click.echo(f"'{username}': {quota_manager.format_quota_summary(username)}")
+
+
+@user_quota.command("list")
+@click.option("--config", default=None)
+def quota_list(config: str | None) -> None:
+    """List storage quotas for all users."""
+    from kryoset.core.quota import QuotaManager
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+    users = user_manager.list_users()
+    if not users:
+        click.echo("No users.")
+        return
+    click.echo(f"{'Username':<20} {'Quota summary'}")
+    click.echo("-" * 55)
+    for entry in users:
+        name = entry["username"]
+        click.echo(f"{name:<20} {quota_manager.format_quota_summary(name)}")
