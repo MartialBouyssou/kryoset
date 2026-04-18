@@ -3,6 +3,7 @@ import secrets
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
+from kryoset.core.timezone import now_utc, parse_iso, UTC_TZ
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -114,14 +115,14 @@ class PermissionStore:
             path=row["path"],
             permissions=Permission.from_names(json.loads(row["permissions"])),
             password_hash=row["password_hash"],
-            expires_at=datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None,
+            expires_at=parse_iso(row["expires_at"]) if row["expires_at"] else None,
             time_windows=[TimeWindow.from_dict(w) for w in json.loads(row["time_windows"])],
             upload_quota_bytes=row["upload_quota_bytes"],
             download_limit=row["download_limit"],
             ip_whitelist=json.loads(row["ip_whitelist"]),
             ip_blacklist=json.loads(row["ip_blacklist"]),
             can_delegate=bool(row["can_delegate"]),
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+            created_at=parse_iso(row["created_at"]) if row["created_at"] else None,
         )
 
     def _share_from_row(self, row: sqlite3.Row) -> ShareLink:
@@ -131,11 +132,11 @@ class PermissionStore:
             created_by=row["created_by"],
             path=row["path"],
             permissions=Permission.from_names(json.loads(row["permissions"])),
-            expires_at=datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None,
+            expires_at=parse_iso(row["expires_at"]) if row["expires_at"] else None,
             download_limit=row["download_limit"],
             download_count=row["download_count"],
             password_hash=row["password_hash"],
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+            created_at=parse_iso(row["created_at"]) if row["created_at"] else None,
         )
 
     def create_group(self, group_name: str) -> None:
@@ -285,6 +286,54 @@ class PermissionStore:
         with self._connect() as conn:
             cursor = conn.execute(
                 "DELETE FROM permission_rules WHERE rule_id = ?", (rule_id,)
+            )
+            if cursor.rowcount == 0:
+                raise PermissionStoreError(f"Rule #{rule_id} does not exist.")
+
+    def update_rule(self, rule_id: int, rule: PermissionRule) -> None:
+        """
+        Update an existing permission rule.
+
+        Args:
+            rule_id: ID of the rule to update.
+            rule: New rule values (its own ``rule_id`` is ignored).
+
+        Raises:
+            PermissionStoreError: If the rule does not exist.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE permission_rules
+                SET subject_type = ?,
+                    subject_id = ?,
+                    path = ?,
+                    permissions = ?,
+                    password_hash = ?,
+                    expires_at = ?,
+                    time_windows = ?,
+                    upload_quota_bytes = ?,
+                    download_limit = ?,
+                    ip_whitelist = ?,
+                    ip_blacklist = ?,
+                    can_delegate = ?
+                WHERE rule_id = ?
+                """,
+                (
+                    rule.subject_type,
+                    rule.subject_id,
+                    rule.path,
+                    json.dumps(rule.permissions.to_names()),
+                    rule.password_hash,
+                    rule.expires_at.isoformat() if rule.expires_at else None,
+                    json.dumps([w.to_dict() for w in rule.time_windows]),
+                    rule.upload_quota_bytes,
+                    rule.download_limit,
+                    json.dumps(rule.ip_whitelist),
+                    json.dumps(rule.ip_blacklist),
+                    int(rule.can_delegate),
+                    rule_id,
+                ),
             )
             if cursor.rowcount == 0:
                 raise PermissionStoreError(f"Rule #{rule_id} does not exist.")
