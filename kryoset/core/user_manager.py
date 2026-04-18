@@ -1,5 +1,4 @@
 import secrets
-from typing import Optional
 
 import bcrypt
 
@@ -174,3 +173,35 @@ class UserManager:
         temporary_password = secrets.token_urlsafe(16)
         self.change_password(username, temporary_password)
         return temporary_password
+
+    def is_admin(self, username: str) -> bool:
+        """
+        Return True if *username* holds the admin role.
+
+        Args:
+            username: Login name to check.
+        """
+        users = self._get_users()
+        return users.get(username, {}).get("admin", False)
+
+    def set_admin(self, username: str, *, admin: bool) -> None:
+        """
+        Grant or revoke the admin role for a user.
+
+        Args:
+            username: Login name of the user.
+            admin: True to grant admin, False to revoke.
+
+        Raises:
+            UserError: If the user does not exist.
+        """
+        users = self._get_users()
+        if username not in users:
+            raise UserError(f"User '{username}' does not exist.")
+        has_existing_admin = any(record.get("admin", False) for record in users.values())
+        if admin and has_existing_admin and not users[username].get("totp_enabled", False):
+            raise UserError(
+                f"User '{username}' must enable TOTP (A2F) before admin role can be granted."
+            )
+        users[username]["admin"] = admin
+        self._save_users(users)

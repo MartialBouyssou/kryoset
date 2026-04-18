@@ -1,0 +1,2087 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kryoset</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0c0f;
+    --surface: #111418;
+    --surface2: #181c22;
+    --border: #1e242d;
+    --border2: #252d38;
+    --accent: #00d4ff;
+    --accent2: #0099bb;
+    --accent-dim: rgba(0,212,255,0.08);
+    --accent-dim2: rgba(0,212,255,0.15);
+    --text: #c8d6e5;
+    --text2: #6b7f94;
+    --text3: #3d4f61;
+    --danger: #ff4444;
+    --danger-dim: rgba(255,68,68,0.1);
+    --warn: #ffaa00;
+    --warn-dim: rgba(255,170,0,0.1);
+    --success: #00cc66;
+    --success-dim: rgba(0,204,102,0.1);
+    --radius: 4px;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ── LOGIN ─────────────────────────────────────────────────── */
+  #login-screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    z-index: 100;
+  }
+  #login-screen.hidden { display: none; }
+
+  .login-box {
+    width: 360px;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    padding: 40px;
+  }
+
+  .login-logo {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .login-logo span { color: var(--text2); font-weight: 400; }
+
+  .login-sub {
+    font-size: 12px;
+    color: var(--text2);
+    font-family: var(--mono);
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    padding: 8px 16px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+    width: 100%;
+  }
+  .btn-primary:hover { background: #00eeff; border-color: #00eeff; }
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border2);
+    color: var(--text2);
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger {
+    background: transparent;
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .btn-danger:hover { background: var(--danger-dim); }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .error-msg {
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 12px;
+    margin-top: 12px;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────────────── */
+  #app { display: flex; width: 100%; height: 100vh; }
+  #app.hidden { display: none; }
+
+  /* sidebar */
+  #sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
+
+  .sidebar-logo {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  .sidebar-logo small {
+    display: block;
+    font-size: 10px;
+    color: var(--text3);
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    margin-top: 2px;
+  }
+
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-section {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 8px 20px 4px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.12s;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--accent-dim); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+  .nav-item .icon { font-size: 14px; width: 16px; text-align: center; }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+  }
+  .user-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 8px;
+  }
+  .user-badge strong { color: var(--text); display: block; }
+  .admin-tag {
+    display: inline-block;
+    background: var(--accent-dim2);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 9px;
+    padding: 1px 6px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
+  /* main content */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .topbar {
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 12px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .topbar-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+    flex: 1;
+  }
+  .breadcrumb {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .breadcrumb span { cursor: pointer; }
+  .breadcrumb span:hover { color: var(--accent); }
+  .breadcrumb .sep { color: var(--text3); }
+
+  #content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  /* ── FILE BROWSER ───────────────────────────────────────────── */
+  .file-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .file-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .file-table th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text3);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: middle;
+  }
+  .file-table tr:hover td { background: var(--accent-dim); }
+  .file-table tr.selected td { background: var(--accent-dim2); }
+  .file-table .file-name {
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .file-table .file-name:hover { color: var(--accent); }
+  .file-icon { font-size: 14px; }
+  .file-size { color: var(--text3); }
+  .row-actions { display: flex; gap: 4px; }
+
+  /* ── UPLOAD DROP ZONE ───────────────────────────────────────── */
+  .dropzone {
+    border: 2px dashed var(--border2);
+    padding: 32px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text3);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 16px;
+  }
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .dropzone .drop-icon { font-size: 28px; margin-bottom: 8px; display: block; }
+
+  /* ── SHARES ─────────────────────────────────────────────────── */
+  .share-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .share-card .share-info { flex: 1; }
+  .share-token {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .share-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .share-meta span { display: flex; align-items: center; gap: 4px; }
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid;
+    margin-right: 4px;
+  }
+  .tag-valid { border-color: var(--success); color: var(--success); background: var(--success-dim); }
+  .tag-expired { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
+  .tag-warn { border-color: var(--warn); color: var(--warn); background: var(--warn-dim); }
+  .share-url-box {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    padding: 6px 10px;
+    color: var(--text2);
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    word-break: break-all;
+  }
+  .share-url-box .copy-btn {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .share-url-box .copy-btn:hover { color: #00eeff; }
+
+  /* ── MODAL ──────────────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    padding: 28px;
+    width: 440px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal-title {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── MISC ───────────────────────────────────────────────────── */
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text2);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text3);
+  }
+  .empty-state .empty-icon { font-size: 32px; display: block; margin-bottom: 12px; }
+
+  .progress-bar {
+    height: 2px;
+    background: var(--border);
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-left: 3px solid var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 12px 16px;
+    color: var(--text);
+    z-index: 500;
+    max-width: 320px;
+    animation: slideIn 0.2s ease;
+  }
+  .toast.error { border-left-color: var(--danger); }
+  .toast.success { border-left-color: var(--success); }
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+
+  .checkbox-label {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--text2);
+    cursor: pointer;
+  }
+  .checkbox-label input { accent-color: var(--accent); }
+
+  select {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+  }
+  select:focus { border-color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">kryoset<span>.nas</span></div>
+    <div class="login-sub">Secure self-hosted storage</div>
+
+    <div id="login-form">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="login-user" autocomplete="username" placeholder="username">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="login-pass" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" onclick="doLogin()" id="login-btn">→ Connect</button>
+      <div id="login-error" class="error-msg" style="display:none"></div>
+    </div>
+
+    <div id="totp-form" style="display:none">
+      <div class="field">
+        <label>Authenticator code</label>
+        <input type="text" id="totp-code" placeholder="000000" maxlength="6" inputmode="numeric">
+      </div>
+      <button class="btn btn-primary" onclick="doTOTP()" id="totp-btn">→ Verify</button>
+      <div id="totp-error" class="error-msg" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div id="sidebar">
+    <div class="sidebar-logo">
+      kryoset
+      <small>NAS / v0.1</small>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-section">Storage</div>
+      <div class="nav-item active" onclick="showPanel('files')" id="nav-files">
+        <span class="icon">📁</span> Files
+      </div>
+      <div class="nav-item" onclick="showPanel('shares')" id="nav-shares">
+        <span class="icon">🔗</span> Shared links
+      </div>
+      <div class="nav-item" onclick="showPanel('settings')" id="nav-settings">
+        <span class="icon">⚙️</span> Settings
+      </div>
+      <div class="nav-section" id="admin-section" style="display:none">Admin</div>
+      <div class="nav-item" onclick="showPanel('users')" id="nav-users" style="display:none">
+        <span class="icon">👤</span> Users
+      </div>
+      <div class="nav-item" onclick="showPanel('permissions')" id="nav-permissions" style="display:none">
+        <span class="icon">🛡️</span> Permissions
+      </div>
+      <div class="nav-item" onclick="showPanel('logs')" id="nav-logs" style="display:none">
+        <span class="icon">📋</span> Logs
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-badge">
+        <strong id="sidebar-username"></strong>
+        <div id="sidebar-admin-tag" class="admin-tag" style="display:none">admin</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()" style="width:100%">Logout</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <!-- FILES -->
+    <div id="panel-files" class="panel">
+      <div class="topbar">
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <button class="btn btn-ghost btn-sm" onclick="reloadFiles()">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div class="file-actions">
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+            ↑ Upload
+            <input type="file" id="upload-input" multiple style="display:none" onchange="handleUpload(this.files)">
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="showMkdirModal()">+ New folder</button>
+          <button class="btn btn-danger btn-sm" id="delete-selected-btn" onclick="deleteSelectedEntries()" disabled>Delete selected (0)</button>
+          <button class="btn btn-ghost btn-sm" id="clear-selection-btn" onclick="clearFileSelection()" disabled>Clear selection</button>
+        </div>
+        <div class="dropzone" id="dropzone">
+          <span class="drop-icon">📥</span>
+          Drop files here to upload
+        </div>
+        <div id="upload-progress" style="display:none;margin-bottom:16px;font-family:var(--mono);font-size:11px;color:var(--text2)"></div>
+        <table class="file-table" id="file-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Size</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="file-list"></tbody>
+        </table>
+        <div id="files-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">📂</span>
+          This folder is empty
+        </div>
+      </div>
+    </div>
+
+    <!-- SHARES -->
+    <div id="panel-shares" class="panel" style="display:none">
+      <div class="topbar">
+        <div class="topbar-title">Shared links</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadShares()">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div style="margin-bottom:16px">
+          <button class="btn btn-ghost btn-sm" onclick="showCreateShareModal()">+ Create share link</button>
+        </div>
+        <div id="shares-list"></div>
+        <div id="shares-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">🔗</span>
+          No active share links
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="panel-settings" class="panel" style="display:none">
+      <div class="topbar">
+        <div class="topbar-title">Account settings</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadTotpSettings(true)">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div class="section-title">Two-factor authentication (A2F / TOTP)</div>
+        <div id="totp-status" style="font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:12px">Loading…</div>
+
+        <div id="totp-setup-area" style="display:none">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="btn btn-ghost btn-sm" onclick="startTotpSetup()">Generate new secret</button>
+            <button class="btn btn-danger btn-sm" onclick="disableTotp()">Disable A2F</button>
+          </div>
+        </div>
+
+        <div id="totp-confirm-area" style="display:none">
+          <div class="field">
+            <label>Provisioning URI (add to your authenticator app)</label>
+            <input type="text" id="totp-uri" readonly>
+          </div>
+          <div class="field">
+            <label>6-digit code</label>
+            <input type="text" id="totp-confirm-code" placeholder="000000" maxlength="6" inputmode="numeric">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="confirmTotpSetup()">Confirm A2F</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelTotpPending()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- USERS (admin) -->
+    <div id="panel-users" class="panel" style="display:none">
+      <div class="topbar">
+        <div class="topbar-title">User management</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadUsers()">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div style="margin-bottom:16px">
+          <button class="btn btn-ghost btn-sm" onclick="showCreateUserModal()">+ Add user</button>
+        </div>
+        <table class="file-table" id="users-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Status</th>
+              <th>Role</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PERMISSIONS (admin) -->
+    <div id="panel-permissions" class="panel" style="display:none">
+      <div class="topbar">
+        <div class="topbar-title">Permissions and groups</div>
+        <button class="btn btn-ghost btn-sm" onclick="reloadPermissionsAdmin()">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div class="section-title">Rules</div>
+        <div style="margin-bottom:16px">
+          <button class="btn btn-ghost btn-sm" onclick="showCreateRuleModal()">+ Add rule</button>
+        </div>
+        <table class="file-table" id="permissions-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Subject</th>
+              <th>Path</th>
+              <th>Permissions</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="permissions-list"></tbody>
+        </table>
+        <div id="permissions-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">🛡️</span>
+          No permission rules
+        </div>
+
+        <div class="section-title" style="margin-top:24px">Groups</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <input type="text" id="new-group-name" placeholder="group name"
+                 style="background:var(--bg);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;outline:none;min-width:180px">
+          <button class="btn btn-ghost btn-sm" onclick="createGroupFromPanel()">+ Create group</button>
+        </div>
+        <table class="file-table" id="groups-table">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Members</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="groups-list"></tbody>
+        </table>
+        <div id="groups-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">👥</span>
+          No groups
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS (admin) -->
+    <div id="panel-logs" class="panel" style="display:none">
+      <div class="topbar">
+        <div class="topbar-title">Audit logs</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadLogs()">↻ Refresh</button>
+      </div>
+      <div id="content">
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+          <input type="text" id="log-filter" placeholder="Filter (e.g. AUTH_FAILURE)" style="flex:1;background:var(--bg);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px;outline:none">
+          <button class="btn btn-ghost btn-sm" onclick="loadLogs()">Apply</button>
+        </div>
+        <pre id="log-output" style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.7;white-space:pre-wrap;word-break:break-all"></pre>
+        <div id="logs-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">📋</span>
+          No log entries
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MKDIR MODAL -->
+<div class="modal-overlay hidden" id="mkdir-modal">
+  <div class="modal">
+    <div class="modal-title">New folder</div>
+    <div class="field">
+      <label>Folder name</label>
+      <input type="text" id="mkdir-name" placeholder="new-folder">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('mkdir-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doMkdir()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- RENAME MODAL -->
+<div class="modal-overlay hidden" id="rename-modal">
+  <div class="modal">
+    <div class="modal-title">Rename</div>
+    <div class="field">
+      <label>New name</label>
+      <input type="text" id="rename-new" placeholder="new-name">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('rename-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doRename()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE SHARE MODAL -->
+<div class="modal-overlay hidden" id="share-modal">
+  <div class="modal">
+    <div class="modal-title">Create share link</div>
+    <div class="field">
+      <label>Path to share</label>
+      <input type="text" id="share-path" placeholder="e.g. documents/report.pdf">
+    </div>
+    <div class="field">
+      <label>Expires after</label>
+      <select id="share-expires">
+        <option value="">Never</option>
+        <option value="1h">1 hour</option>
+        <option value="24h">24 hours</option>
+        <option value="7d">7 days</option>
+        <option value="30d">30 days</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Download limit</label>
+      <input type="number" id="share-limit" placeholder="Unlimited" min="1">
+    </div>
+    <div class="field">
+      <label>Password (optional)</label>
+      <input type="password" id="share-password" placeholder="Leave empty for no password">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('share-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doCreateShare()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE USER MODAL -->
+<div class="modal-overlay hidden" id="user-modal">
+  <div class="modal">
+    <div class="modal-title">Add user</div>
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="new-username" placeholder="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="new-password" placeholder="Min. 8 characters">
+    </div>
+    <div class="field">
+      <label class="checkbox-label">
+        <input type="checkbox" id="new-is-admin"> Grant admin role
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('user-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doCreateUser()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE RULE MODAL -->
+<div class="modal-overlay hidden" id="rule-modal">
+  <div class="modal">
+    <div class="modal-title" id="rule-modal-title">Add permission rule</div>
+    <div class="field">
+      <label>Subject type</label>
+      <select id="rule-subject-type">
+        <option value="user">User</option>
+        <option value="group">Group</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Subject id</label>
+      <input type="text" id="rule-subject-id" placeholder="username or group">
+    </div>
+    <div class="field">
+      <label>Path</label>
+      <input type="text" id="rule-path" placeholder="/photos">
+    </div>
+    <div class="field">
+      <label>Permissions</label>
+      <select id="rule-permissions" multiple size="8" style="width:100%">
+        <option>LIST</option>
+        <option>PREVIEW</option>
+        <option>DOWNLOAD</option>
+        <option>UPLOAD</option>
+        <option>COPY</option>
+        <option>RENAME</option>
+        <option>MOVE</option>
+        <option>DELETE</option>
+        <option>MANAGE_PERMS</option>
+        <option>SHARE</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Expires at (optional, ISO date)</label>
+      <input type="text" id="rule-expires" placeholder="2026-12-31T23:59:59+00:00">
+    </div>
+    <div class="field">
+      <label class="checkbox-label">
+        <input type="checkbox" id="rule-can-delegate"> Allow delegate management
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('rule-modal')">Cancel</button>
+      <button class="btn btn-primary" id="rule-submit-btn" onclick="doCreateRule()">Create rule</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay hidden" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-title" id="confirm-title">Confirm action</div>
+    <div style="font-family:var(--mono);font-size:12px;color:var(--text2);line-height:1.6" id="confirm-message">
+      Are you sure?
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('confirm-modal')">Cancel</button>
+      <button class="btn btn-danger" id="confirm-action-btn" onclick="runConfirmAction()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+let accessToken = null;
+let currentUser = null;
+let currentPath = '';
+let renamingPath = null;
+let editingRuleId = null;
+let currentRulesById = {};
+let pendingConfirmAction = null;
+let totpPendingUser = null;
+let expiredSharesCollapsed = true;
+let selectedPaths = new Set();
+let currentEntriesByPath = {};
+
+// ── AUTH ──────────────────────────────────────────────────────────
+
+async function api(method, path, body, isForm = false) {
+  const headers = {};
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+  headers['Cache-Control'] = 'no-cache';
+  let reqBody;
+  let requestPath = path;
+  if (method === 'GET') {
+    const sep = path.includes('?') ? '&' : '?';
+    requestPath = `${path}${sep}_ts=${Date.now()}`;
+  }
+  if (body && !isForm) {
+    headers['Content-Type'] = 'application/json';
+    reqBody = JSON.stringify(body);
+  } else if (body && isForm) {
+    reqBody = body;
+  }
+  const resp = await fetch(API + requestPath, {
+    method,
+    headers,
+    body: reqBody,
+    cache: 'no-store',
+  });
+  return resp;
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-user').value.trim();
+  const password = document.getElementById('login-pass').value;
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-btn').disabled = true;
+  document.getElementById('login-btn').textContent = '...';
+
+  const resp = await api('POST', '/auth/login', { username, password });
+  const data = await resp.json();
+  document.getElementById('login-btn').disabled = false;
+  document.getElementById('login-btn').textContent = '→ Connect';
+
+  if (!resp.ok) {
+    showLoginError(data.detail || 'Login failed');
+    return;
+  }
+
+  if (data.totp_required) {
+    window._pendingTotpUser = username;
+    document.getElementById('login-form').style.display = 'none';
+    document.getElementById('totp-form').style.display = 'block';
+    document.getElementById('totp-code').focus();
+    return;
+  }
+
+  finishLogin(data.access_token);
+}
+
+async function doTOTP() {
+  const code = document.getElementById('totp-code').value.trim();
+  document.getElementById('totp-error').style.display = 'none';
+  document.getElementById('totp-btn').disabled = true;
+
+  const resp = await api('POST', '/auth/totp', { username: window._pendingTotpUser, code });
+  const data = await resp.json();
+  document.getElementById('totp-btn').disabled = false;
+
+  if (!resp.ok) {
+    const el = document.getElementById('totp-error');
+    el.textContent = data.detail || 'Invalid code';
+    el.style.display = 'block';
+    return;
+  }
+  finishLogin(data.access_token);
+}
+
+async function finishLogin(token) {
+  accessToken = token;
+  const meResp = await api('GET', '/auth/me');
+  currentUser = await meResp.json();
+
+  document.getElementById('sidebar-username').textContent = currentUser.username;
+  if (currentUser.admin) {
+    document.getElementById('sidebar-admin-tag').style.display = 'inline-block';
+    document.getElementById('admin-section').style.display = 'block';
+    document.getElementById('nav-users').style.display = 'flex';
+    document.getElementById('nav-permissions').style.display = 'flex';
+    document.getElementById('nav-logs').style.display = 'flex';
+  }
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  await loadTotpSettings(false);
+  showPanel('files');
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function doLogout() {
+  await api('POST', '/auth/logout');
+  accessToken = null;
+  currentUser = null;
+  currentPath = '';
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('totp-form').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+}
+
+// ── PANELS ────────────────────────────────────────────────────────
+
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + name).style.display = 'flex';
+  document.getElementById('panel-' + name).style.flexDirection = 'column';
+  const navEl = document.getElementById('nav-' + name);
+  if (navEl) navEl.classList.add('active');
+
+  if (name === 'files') reloadFiles();
+  if (name === 'shares') loadShares();
+  if (name === 'settings') loadTotpSettings(true);
+  if (name === 'users') loadUsers();
+  if (name === 'permissions') reloadPermissionsAdmin();
+  if (name === 'logs') loadLogs();
+}
+
+// ── FILES ─────────────────────────────────────────────────────────
+
+function buildBreadcrumb() {
+  const el = document.getElementById('breadcrumb');
+  const parts = currentPath ? currentPath.split('/').filter(Boolean) : [];
+  let html = `<span onclick="navigateTo('')">~</span>`;
+  let accumulated = '';
+  for (const part of parts) {
+    accumulated += (accumulated ? '/' : '') + part;
+    const path = accumulated;
+    html += `<span class="sep">/</span><span onclick="navigateTo('${path}')">${part}</span>`;
+  }
+  el.innerHTML = html;
+}
+
+function navigateTo(path) {
+  currentPath = path;
+  reloadFiles();
+}
+
+async function reloadFiles() {
+  buildBreadcrumb();
+  const resp = await api('GET', `/files/list?path=${encodeURIComponent(currentPath)}`);
+  const tbody = document.getElementById('file-list');
+  const empty = document.getElementById('files-empty');
+
+  if (!resp.ok) {
+    const d = await resp.json();
+    toast(d.detail || 'Cannot list directory', 'error');
+    return;
+  }
+
+  const data = await resp.json();
+  const entries = data.entries || [];
+  currentEntriesByPath = {};
+  clearFileSelection();
+  tbody.innerHTML = '';
+  empty.style.display = entries.length ? 'none' : 'block';
+
+  if (currentPath) {
+    const parentPath = currentPath.includes('/') ? currentPath.rsplit('/', 1)[0] : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><div class="file-name" onclick="navigateTo('${parentPath}')"><span class="file-icon">📁</span> ..</div></td>
+      <td>—</td><td></td>`;
+    tbody.appendChild(tr);
+  }
+
+  for (const entry of entries) {
+    const fullPath = currentPath ? currentPath + '/' + entry.name : entry.name;
+    const isDir = entry.type === 'directory';
+    currentEntriesByPath[fullPath] = { isDir };
+    const size = isDir ? '—' : formatSize(entry.size);
+    const icon = isDir ? '📁' : getFileIcon(entry.name);
+    const clickHandler = isDir ? `navigateTo('${fullPath}')` : `downloadFile('${fullPath}')`;
+
+    const tr = document.createElement('tr');
+    tr.id = `file-row-${encodeURIComponent(fullPath)}`;
+    tr.onclick = (event) => handleEntryRowClick(event, fullPath);
+    tr.innerHTML = `
+      <td><div class="file-name" onclick="event.stopPropagation(); ${clickHandler}"><span class="file-icon">${icon}</span>${entry.name}</div></td>
+      <td class="file-size">${size}</td>
+      <td>
+        <div class="row-actions">
+          ${!isDir ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); downloadFile('${fullPath}')">↓</button>` : ''}
+          ${!isDir ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); promptShare('${fullPath}')">⇥ Share</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); promptRename('${fullPath}')">✎</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteEntry('${fullPath}', ${isDir})">✕</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function syncSelectedFilesUI() {
+  const count = selectedPaths.size;
+  const deleteBtn = document.getElementById('delete-selected-btn');
+  const clearBtn = document.getElementById('clear-selection-btn');
+  if (deleteBtn) {
+    deleteBtn.disabled = count === 0;
+    deleteBtn.textContent = `Delete selected (${count})`;
+  }
+  if (clearBtn) {
+    clearBtn.disabled = count === 0;
+  }
+}
+
+function clearFileSelection() {
+  selectedPaths.clear();
+  document.querySelectorAll('#file-list tr.selected').forEach(tr => tr.classList.remove('selected'));
+  syncSelectedFilesUI();
+}
+
+function _rowElementForPath(path) {
+  return document.getElementById(`file-row-${encodeURIComponent(path)}`);
+}
+
+function _setPathSelected(path, selected) {
+  const row = _rowElementForPath(path);
+  if (!row) return;
+  if (selected) {
+    selectedPaths.add(path);
+    row.classList.add('selected');
+  } else {
+    selectedPaths.delete(path);
+    row.classList.remove('selected');
+  }
+}
+
+function handleEntryRowClick(event, path) {
+  if (event.ctrlKey || event.metaKey) {
+    _setPathSelected(path, !selectedPaths.has(path));
+    syncSelectedFilesUI();
+    return;
+  }
+
+  clearFileSelection();
+  _setPathSelected(path, true);
+  syncSelectedFilesUI();
+}
+
+function getFileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const map = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', webp:'🖼️',
+    mp4:'🎬', mkv:'🎬', avi:'🎬', mov:'🎬', mp3:'🎵', flac:'🎵', wav:'🎵',
+    zip:'📦', tar:'📦', gz:'📦', rar:'📦', txt:'📝', md:'📝', json:'🔧',
+    py:'🐍', js:'📜', ts:'📜', html:'🌐', css:'🎨', sh:'⚙️', sql:'🗄️' };
+  return map[ext] || '📄';
+}
+
+function formatSize(bytes) {
+  if (bytes === null || bytes === undefined) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return bytes.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+async function downloadFile(path) {
+  const resp = await api('GET', `/files/download?path=${encodeURIComponent(path)}`);
+  if (!resp.ok) { const d = await resp.json(); toast(d.detail, 'error'); return; }
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = path.split('/').pop();
+  a.click();
+}
+
+async function deleteEntry(path, isDir) {
+  showConfirmModal({
+    title: 'Delete path',
+    message: `Delete "${path}"?${isDir ? ' This will delete all contents.' : ''}`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/files/delete?path=${encodeURIComponent(path)}`);
+      if (resp.ok) {
+        toast('Deleted.', 'success');
+        reloadFiles();
+      } else {
+        const d = await resp.json();
+        toast(d.detail, 'error');
+      }
+    },
+  });
+}
+
+async function deleteSelectedEntries() {
+  const targets = Array.from(selectedPaths);
+  if (!targets.length) return;
+
+  const hasDirectory = targets.some(path => (currentEntriesByPath[path] || {}).isDir);
+  showConfirmModal({
+    title: 'Delete selection',
+    message: `Delete ${targets.length} selected item(s)?${hasDirectory ? ' Some are folders and will be removed recursively.' : ''}`,
+    confirmLabel: 'Delete all',
+    onConfirm: async () => {
+      let deleted = 0;
+      for (const path of targets) {
+        const resp = await api('DELETE', `/files/delete?path=${encodeURIComponent(path)}`);
+        if (resp.ok) deleted += 1;
+      }
+      if (deleted === targets.length) {
+        toast(`Deleted ${deleted} item(s).`, 'success');
+      } else {
+        toast(`Deleted ${deleted}/${targets.length} item(s).`, 'error');
+      }
+      reloadFiles();
+    },
+  });
+}
+
+function promptRename(path) {
+  renamingPath = path;
+  const name = path.split('/').pop();
+  document.getElementById('rename-new').value = name;
+  openModal('rename-modal');
+}
+
+async function doRename() {
+  const newName = document.getElementById('rename-new').value.trim();
+  if (!newName) return;
+  const parent = renamingPath.includes('/') ? renamingPath.substring(0, renamingPath.lastIndexOf('/')) : '';
+  const dest = parent ? parent + '/' + newName : newName;
+  const resp = await api('POST', '/files/rename', { source: renamingPath, destination: dest });
+  if (resp.ok) {
+    toast('Renamed.', 'success');
+    closeModal('rename-modal');
+    reloadFiles();
+  } else {
+    const d = await resp.json();
+    toast(d.detail, 'error');
+  }
+}
+
+function showMkdirModal() {
+  document.getElementById('mkdir-name').value = '';
+  openModal('mkdir-modal');
+}
+
+async function doMkdir() {
+  const name = document.getElementById('mkdir-name').value.trim();
+  if (!name) return;
+  const path = currentPath ? currentPath + '/' + name : name;
+  const resp = await api('POST', '/files/mkdir', { path });
+  if (resp.ok) {
+    toast('Folder created.', 'success');
+    closeModal('mkdir-modal');
+    reloadFiles();
+  } else {
+    const d = await resp.json();
+    toast(d.detail, 'error');
+  }
+}
+
+// ── UPLOAD ────────────────────────────────────────────────────────
+
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag-over');
+  handleUpload(e.dataTransfer.files);
+});
+dropzone.addEventListener('click', () => document.getElementById('upload-input').click());
+
+async function handleUpload(files) {
+  if (!files.length) return;
+  const progressEl = document.getElementById('upload-progress');
+  progressEl.style.display = 'block';
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const path = currentPath ? currentPath + '/' + file.name : file.name;
+    progressEl.innerHTML = `Uploading ${i + 1}/${files.length}: ${file.name}<div class="progress-bar"><div class="progress-fill" style="width:${Math.round((i/files.length)*100)}%"></div></div>`;
+
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await api('POST', `/files/upload?path=${encodeURIComponent(path)}`, fd, true);
+    if (!resp.ok) {
+      const d = await resp.json();
+      toast(`${file.name}: ${d.detail}`, 'error');
+    }
+  }
+
+  progressEl.innerHTML = `✓ ${files.length} file(s) uploaded`;
+  setTimeout(() => { progressEl.style.display = 'none'; }, 3000);
+  toast(`${files.length} file(s) uploaded`, 'success');
+  reloadFiles();
+}
+
+// ── SHARES ────────────────────────────────────────────────────────
+
+function promptShare(path) {
+  document.getElementById('share-path').value = path;
+  document.getElementById('share-expires').value = '';
+  document.getElementById('share-limit').value = '';
+  document.getElementById('share-password').value = '';
+  openModal('share-modal');
+}
+
+function showCreateShareModal() {
+  document.getElementById('share-path').value = '';
+  document.getElementById('share-expires').value = '';
+  document.getElementById('share-limit').value = '';
+  document.getElementById('share-password').value = '';
+  openModal('share-modal');
+}
+
+async function doCreateShare() {
+  const path = document.getElementById('share-path').value.trim();
+  const expiresStr = document.getElementById('share-expires').value;
+  const limit = document.getElementById('share-limit').value;
+  const password = document.getElementById('share-password').value;
+
+  if (!path) { toast('Path is required', 'error'); return; }
+
+  let expires_at = null;
+  if (expiresStr) {
+    const now = new Date();
+    const match = expiresStr.match(/^(\d+)(h|d)$/);
+    if (match) {
+      const amount = parseInt(match[1]);
+      const ms = match[2] === 'h' ? amount * 3600000 : amount * 86400000;
+      expires_at = new Date(now.getTime() + ms).toISOString();
+    }
+  }
+
+  const body = {
+    path,
+    permissions: ['DOWNLOAD'],
+    ...(expires_at && { expires_at }),
+    ...(limit && { download_limit: parseInt(limit) }),
+    ...(password && { password }),
+  };
+
+  const resp = await api('POST', '/shares/', body);
+  if (resp.ok) {
+    toast('Share link created!', 'success');
+    closeModal('share-modal');
+    showPanel('shares');
+  } else {
+    const d = await resp.json();
+    toast(d.detail, 'error');
+  }
+}
+
+async function loadShares() {
+  const resp = await api('GET', '/shares/');
+  if (!resp.ok) { toast('Cannot load shares', 'error'); return; }
+  const shares = await resp.json();
+
+  const container = document.getElementById('shares-list');
+  const empty = document.getElementById('shares-empty');
+  container.innerHTML = '';
+  const activeShares = shares.filter(s => !!s.valid);
+  const expiredShares = shares.filter(s => !s.valid);
+  empty.style.display = activeShares.length ? 'none' : 'block';
+
+  for (const share of activeShares) {
+    const publicUrl = `${location.origin}/share/${share.token}`;
+    const tag = share.valid
+      ? `<span class="tag tag-valid">active</span>`
+      : `<span class="tag tag-expired">expired</span>`;
+    const passTag = share.password_required ? `<span class="tag tag-warn">🔒 password</span>` : '';
+    const dlInfo = share.download_limit
+      ? `${share.download_count}/${share.download_limit} downloads`
+      : `${share.download_count} downloads`;
+    const expires = share.expires_at
+      ? new Date(share.expires_at).toLocaleString()
+      : 'Never';
+
+    const div = document.createElement('div');
+    div.className = 'share-card';
+    div.innerHTML = `
+      <div class="share-info">
+        <div class="share-token">${tag}${passTag} ${share.path}</div>
+        <div class="share-meta">
+          <span>📅 ${expires}</span>
+          <span>⬇ ${dlInfo}</span>
+          <span>👤 ${share.created_by}</span>
+        </div>
+        <div class="share-url-box">
+          <span style="flex:1;word-break:break-all">${publicUrl}</span>
+          <span class="copy-btn" onclick="copyText('${publicUrl}')">📋 Copy</span>
+        </div>
+      </div>
+      <div style="flex-shrink:0">
+        <button class="btn btn-danger btn-sm" onclick="revokeShare('${share.token}')">Revoke</button>
+      </div>`;
+    container.appendChild(div);
+  }
+
+  if (expiredShares.length) {
+    const section = document.createElement('div');
+    section.style.marginTop = '16px';
+    section.style.borderTop = '1px solid var(--border)';
+    section.style.paddingTop = '12px';
+
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+    header.style.marginBottom = '10px';
+    header.innerHTML = `
+      <button class="btn btn-ghost btn-sm" onclick="toggleExpiredShares()" id="expired-toggle-btn">${expiredSharesCollapsed ? '▸' : '▾'} Expired (${expiredShares.length})</button>
+      <button class="btn btn-danger btn-sm" onclick="clearExpiredShares()">Clear expired</button>`;
+    section.appendChild(header);
+
+    const expiredContainer = document.createElement('div');
+    expiredContainer.id = 'expired-shares-container';
+    expiredContainer.style.display = expiredSharesCollapsed ? 'none' : 'block';
+
+    for (const share of expiredShares) {
+      const publicUrl = `${location.origin}/share/${share.token}`;
+      const dlInfo = share.download_limit
+        ? `${share.download_count}/${share.download_limit} downloads`
+        : `${share.download_count} downloads`;
+      const expires = share.expires_at
+        ? new Date(share.expires_at).toLocaleString()
+        : 'Never';
+
+      const div = document.createElement('div');
+      div.className = 'share-card';
+      div.innerHTML = `
+        <div class="share-info">
+          <div class="share-token"><span class="tag tag-expired">expired</span> ${share.path}</div>
+          <div class="share-meta">
+            <span>📅 ${expires}</span>
+            <span>⬇ ${dlInfo}</span>
+            <span>👤 ${share.created_by}</span>
+          </div>
+          <div class="share-url-box">
+            <span style="flex:1;word-break:break-all">${publicUrl}</span>
+            <span class="copy-btn" onclick="copyText('${publicUrl}')">📋 Copy</span>
+          </div>
+        </div>
+        <div style="flex-shrink:0">
+          <button class="btn btn-danger btn-sm" onclick="deleteExpiredShare('${share.token}')">Delete</button>
+        </div>`;
+      expiredContainer.appendChild(div);
+    }
+
+    section.appendChild(expiredContainer);
+    container.appendChild(section);
+  }
+}
+
+function toggleExpiredShares() {
+  expiredSharesCollapsed = !expiredSharesCollapsed;
+  const container = document.getElementById('expired-shares-container');
+  const btn = document.getElementById('expired-toggle-btn');
+  if (container) {
+    container.style.display = expiredSharesCollapsed ? 'none' : 'block';
+  }
+  if (btn) {
+    const label = btn.textContent.replace(/^.[ ]/, '');
+    btn.textContent = `${expiredSharesCollapsed ? '▸' : '▾'} ${label}`;
+  }
+}
+
+async function deleteExpiredShare(token) {
+  showConfirmModal({
+    title: 'Delete expired link',
+    message: 'This expired link will be permanently removed.',
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/shares/${token}`);
+      if (resp.ok) {
+        toast('Expired link deleted.', 'success');
+        loadShares();
+      } else {
+        const d = await resp.json();
+        toast(d.detail || 'Cannot delete expired link.', 'error');
+      }
+    },
+  });
+}
+
+async function clearExpiredShares() {
+  const resp = await api('GET', '/shares/');
+  if (!resp.ok) {
+    toast('Cannot load shares', 'error');
+    return;
+  }
+  const shares = await resp.json();
+  const expiredTokens = shares.filter(s => !s.valid).map(s => s.token);
+
+  if (!expiredTokens.length) {
+    toast('No expired links to clear.', 'error');
+    return;
+  }
+
+  showConfirmModal({
+    title: 'Clear expired links',
+    message: `This will delete ${expiredTokens.length} expired link(s).`,
+    confirmLabel: 'Clear',
+    onConfirm: async () => {
+      let success = 0;
+      for (const token of expiredTokens) {
+        const delResp = await api('DELETE', `/shares/${token}`);
+        if (delResp.ok) success += 1;
+      }
+      if (success === expiredTokens.length) {
+        toast(`Cleared ${success} expired link(s).`, 'success');
+      } else {
+        toast(`Cleared ${success}/${expiredTokens.length} expired link(s).`, 'error');
+      }
+      loadShares();
+    },
+  });
+}
+
+async function revokeShare(token) {
+  showConfirmModal({
+    title: 'Revoke share link',
+    message: 'This link will stop working immediately.',
+    confirmLabel: 'Revoke',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/shares/${token}`);
+      if (resp.ok) {
+        toast('Share revoked.', 'success');
+        loadShares();
+      } else {
+        const d = await resp.json();
+        toast(d.detail, 'error');
+      }
+    },
+  });
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('Copied!', 'success'));
+}
+
+// ── USERS (admin) ─────────────────────────────────────────────────
+
+async function loadUsers() {
+  const resp = await api('GET', '/users/');
+  if (!resp.ok) return;
+  const users = await resp.json();
+  const tbody = document.getElementById('users-list');
+  tbody.innerHTML = '';
+
+  for (const u of users) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-family:var(--mono)">${u.username}</td>
+      <td><span class="tag ${u.enabled ? 'tag-valid' : 'tag-expired'}">${u.enabled ? 'active' : 'disabled'}</span></td>
+      <td>${u.admin ? '<span class="tag tag-warn">admin</span>' : '<span style="color:var(--text3);font-family:var(--mono);font-size:11px">user</span>'}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.username}', ${u.enabled})">${u.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetPwd('${u.username}')">Reset pwd</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.username}')">✕</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ── PERMISSIONS (admin) ──────────────────────────────────────────
+
+async function reloadPermissionsAdmin() {
+  await loadPermissionRules();
+  await loadGroups();
+}
+
+async function loadPermissionRules() {
+  const resp = await api('GET', '/permissions/rules');
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot load rules.' }));
+    toast(d.detail || 'Cannot load rules.', 'error');
+    return;
+  }
+
+  const rules = await resp.json();
+  currentRulesById = {};
+  const tbody = document.getElementById('permissions-list');
+  const empty = document.getElementById('permissions-empty');
+  tbody.innerHTML = '';
+  empty.style.display = rules.length ? 'none' : 'block';
+
+  for (const rule of rules) {
+    currentRulesById[rule.rule_id] = rule;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-family:var(--mono)">${rule.rule_id}</td>
+      <td style="font-family:var(--mono)">${rule.subject_type}:${rule.subject_id}</td>
+      <td style="font-family:var(--mono)">${rule.path}</td>
+      <td style="font-family:var(--mono)">${(rule.permissions || []).join(', ') || 'NONE'}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-ghost btn-sm" onclick="showEditRuleModal(${rule.rule_id})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="removeRule(${rule.rule_id})">Remove</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function showCreateRuleModal() {
+  editingRuleId = null;
+  document.getElementById('rule-modal-title').textContent = 'Add permission rule';
+  document.getElementById('rule-submit-btn').textContent = 'Create rule';
+  document.getElementById('rule-subject-type').value = 'user';
+  document.getElementById('rule-subject-id').value = '';
+  document.getElementById('rule-path').value = '/';
+  document.getElementById('rule-expires').value = '';
+  document.getElementById('rule-can-delegate').checked = false;
+  Array.from(document.getElementById('rule-permissions').options).forEach(opt => opt.selected = false);
+  openModal('rule-modal');
+}
+
+function showEditRuleModal(ruleId) {
+  const rule = currentRulesById[ruleId];
+  if (!rule) {
+    toast('Rule not found in current list.', 'error');
+    return;
+  }
+  editingRuleId = ruleId;
+  document.getElementById('rule-modal-title').textContent = `Edit rule #${ruleId}`;
+  document.getElementById('rule-submit-btn').textContent = 'Save changes';
+  document.getElementById('rule-subject-type').value = rule.subject_type;
+  document.getElementById('rule-subject-id').value = rule.subject_id;
+  document.getElementById('rule-path').value = rule.path || '/';
+  document.getElementById('rule-expires').value = rule.expires_at || '';
+  document.getElementById('rule-can-delegate').checked = !!rule.can_delegate;
+
+  const selected = new Set(rule.permissions || []);
+  Array.from(document.getElementById('rule-permissions').options).forEach(opt => {
+    opt.selected = selected.has(opt.value);
+  });
+  openModal('rule-modal');
+}
+
+async function doCreateRule() {
+  const subject_type = document.getElementById('rule-subject-type').value;
+  const subject_id = document.getElementById('rule-subject-id').value.trim();
+  const rawPath = document.getElementById('rule-path').value.trim();
+  const path = rawPath ? `/${rawPath.replace(/^\/+/, '')}` : '/';
+  const expires_at = document.getElementById('rule-expires').value.trim();
+  const can_delegate = document.getElementById('rule-can-delegate').checked;
+  const permissions = Array.from(document.getElementById('rule-permissions').selectedOptions).map(o => o.value);
+
+  if (!subject_id) { toast('Subject id is required.', 'error'); return; }
+  if (!path) { toast('Path is required.', 'error'); return; }
+  if (!permissions.length) { toast('Select at least one permission.', 'error'); return; }
+
+  const body = {
+    subject_type,
+    subject_id,
+    path,
+    permissions,
+    can_delegate,
+    ...(expires_at && { expires_at }),
+  };
+
+  const method = editingRuleId === null ? 'POST' : 'PUT';
+  const pathToCall = editingRuleId === null
+    ? '/permissions/rules'
+    : `/permissions/rules/${editingRuleId}`;
+  const resp = await api(method, pathToCall, body);
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot save rule.' }));
+    toast(d.detail || 'Cannot save rule.', 'error');
+    return;
+  }
+  toast(editingRuleId === null ? 'Permission rule created.' : 'Permission rule updated.', 'success');
+  editingRuleId = null;
+  closeModal('rule-modal');
+  loadPermissionRules();
+}
+
+async function removeRule(ruleId) {
+  showConfirmModal({
+    title: 'Remove rule',
+    message: `Remove rule #${ruleId}?`,
+    confirmLabel: 'Remove',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/permissions/rules/${ruleId}`);
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({ detail: 'Cannot remove rule.' }));
+        toast(d.detail || 'Cannot remove rule.', 'error');
+        return;
+      }
+      toast(`Rule #${ruleId} removed.`, 'success');
+      loadPermissionRules();
+    },
+  });
+}
+
+async function loadGroups() {
+  const resp = await api('GET', '/permissions/groups');
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot load groups.' }));
+    toast(d.detail || 'Cannot load groups.', 'error');
+    return;
+  }
+
+  const groups = await resp.json();
+  const tbody = document.getElementById('groups-list');
+  const empty = document.getElementById('groups-empty');
+  tbody.innerHTML = '';
+  empty.style.display = groups.length ? 'none' : 'block';
+
+  for (const grp of groups) {
+    const encodedGroup = encodeURIComponent(grp.name);
+    const memberInputId = `member-input-${encodedGroup}`;
+    const members = (grp.members || []).join(', ') || '(empty)';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-family:var(--mono)">${grp.name}</td>
+      <td>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:6px">${members}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <input type="text" id="${memberInputId}" placeholder="username"
+                 style="background:var(--bg);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 8px;outline:none;min-width:120px">
+          <button class="btn btn-ghost btn-sm" onclick="addGroupMember('${encodedGroup}')">Add member</button>
+          <button class="btn btn-ghost btn-sm" onclick="removeGroupMember('${encodedGroup}')">Remove member</button>
+        </div>
+      </td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteGroup('${encodedGroup}')">Delete</button></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function createGroupFromPanel() {
+  const name = document.getElementById('new-group-name').value.trim();
+  if (!name) { toast('Group name is required.', 'error'); return; }
+
+  const resp = await api('POST', `/permissions/groups/${encodeURIComponent(name)}`);
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot create group.' }));
+    toast(d.detail || 'Cannot create group.', 'error');
+    return;
+  }
+  document.getElementById('new-group-name').value = '';
+  toast(`Group "${name}" created.`, 'success');
+  loadGroups();
+}
+
+async function deleteGroup(encodedGroup) {
+  const name = decodeURIComponent(encodedGroup);
+  showConfirmModal({
+    title: 'Delete group',
+    message: `Delete group "${name}"?`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/permissions/groups/${encodeURIComponent(name)}`);
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({ detail: 'Cannot delete group.' }));
+        toast(d.detail || 'Cannot delete group.', 'error');
+        return;
+      }
+      toast(`Group "${name}" deleted.`, 'success');
+      loadGroups();
+    },
+  });
+}
+
+function _groupMemberInputValue(encodedGroup) {
+  const input = document.getElementById(`member-input-${encodedGroup}`);
+  const username = (input?.value || '').trim();
+  if (!username) {
+    toast('Username is required.', 'error');
+    return null;
+  }
+  return username;
+}
+
+async function addGroupMember(encodedGroup) {
+  const groupName = decodeURIComponent(encodedGroup);
+  const username = _groupMemberInputValue(encodedGroup);
+  if (!username) return;
+  const resp = await api('POST', `/permissions/groups/${encodeURIComponent(groupName)}/members`, { username });
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot add member.' }));
+    toast(d.detail || 'Cannot add member.', 'error');
+    return;
+  }
+  toast(`"${username}" added to "${groupName}".`, 'success');
+  loadGroups();
+}
+
+async function removeGroupMember(encodedGroup) {
+  const groupName = decodeURIComponent(encodedGroup);
+  const username = _groupMemberInputValue(encodedGroup);
+  if (!username) return;
+  const resp = await api('DELETE', `/permissions/groups/${encodeURIComponent(groupName)}/members/${encodeURIComponent(username)}`);
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot remove member.' }));
+    toast(d.detail || 'Cannot remove member.', 'error');
+    return;
+  }
+  toast(`"${username}" removed from "${groupName}".`, 'success');
+  loadGroups();
+}
+
+function showCreateUserModal() {
+  document.getElementById('new-username').value = '';
+  document.getElementById('new-password').value = '';
+  document.getElementById('new-is-admin').checked = false;
+  openModal('user-modal');
+}
+
+async function doCreateUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const isAdmin = document.getElementById('new-is-admin').checked;
+
+  const resp = await api('POST', '/users/', { username, password });
+  if (!resp.ok) { const d = await resp.json(); toast(d.detail, 'error'); return; }
+
+  if (isAdmin) {
+    const adminResp = await api('POST', `/users/${username}/admin?grant=true`);
+    if (!adminResp.ok) {
+      const d = await adminResp.json().catch(() => ({ detail: 'Cannot grant admin role.' }));
+      toast(d.detail || 'Cannot grant admin role.', 'error');
+      loadUsers();
+      closeModal('user-modal');
+      return;
+    }
+  }
+  toast(`User "${username}" created.`, 'success');
+  closeModal('user-modal');
+  loadUsers();
+}
+
+// ── SETTINGS / TOTP ─────────────────────────────────────────────
+
+async function loadTotpSettings(showWarningIfDisabled = false) {
+  if (!currentUser) return;
+  const resp = await api('GET', `/users/${encodeURIComponent(currentUser.username)}/totp/status`);
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot load TOTP status.' }));
+    document.getElementById('totp-status').textContent = d.detail || 'Cannot load TOTP status.';
+    return;
+  }
+
+  const data = await resp.json();
+  const enabled = !!data.enabled;
+  document.getElementById('totp-status').textContent = enabled
+    ? 'A2F is enabled on this account.'
+    : 'A2F is disabled on this account.';
+
+  document.getElementById('totp-setup-area').style.display = 'block';
+  if (showWarningIfDisabled && !enabled) {
+    toast('A2F is disabled. Configure it in Settings for better security.', 'error');
+  }
+}
+
+async function startTotpSetup() {
+  if (!currentUser) return;
+  const resp = await api('POST', `/users/${encodeURIComponent(currentUser.username)}/totp/setup`);
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Cannot start TOTP setup.' }));
+    toast(d.detail || 'Cannot start TOTP setup.', 'error');
+    return;
+  }
+  const data = await resp.json();
+  totpPendingUser = currentUser.username;
+  document.getElementById('totp-uri').value = data.uri || '';
+  document.getElementById('totp-confirm-code').value = '';
+  document.getElementById('totp-confirm-area').style.display = 'block';
+  toast('TOTP secret generated. Add it in your authenticator app, then confirm.', 'success');
+}
+
+async function confirmTotpSetup() {
+  if (!totpPendingUser) {
+    toast('No pending TOTP setup.', 'error');
+    return;
+  }
+  const code = document.getElementById('totp-confirm-code').value.trim();
+  if (!code) {
+    toast('Code is required.', 'error');
+    return;
+  }
+
+  const resp = await api('POST', `/users/${encodeURIComponent(totpPendingUser)}/totp/confirm`, { code });
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({ detail: 'Invalid TOTP code.' }));
+    toast(d.detail || 'Invalid TOTP code.', 'error');
+    return;
+  }
+  toast('A2F enabled successfully.', 'success');
+  cancelTotpPending();
+  loadTotpSettings(false);
+}
+
+function cancelTotpPending() {
+  totpPendingUser = null;
+  document.getElementById('totp-confirm-area').style.display = 'none';
+  document.getElementById('totp-uri').value = '';
+  document.getElementById('totp-confirm-code').value = '';
+}
+
+async function disableTotp() {
+  if (!currentUser) return;
+  showConfirmModal({
+    title: 'Disable A2F',
+    message: 'This will remove TOTP protection from your account.',
+    confirmLabel: 'Disable',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/users/${encodeURIComponent(currentUser.username)}/totp`);
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({ detail: 'Cannot disable A2F.' }));
+        toast(d.detail || 'Cannot disable A2F.', 'error');
+        return;
+      }
+      toast('A2F disabled.', 'success');
+      cancelTotpPending();
+      loadTotpSettings(false);
+    },
+  });
+}
+
+async function toggleUser(username, enabled) {
+  const action = enabled ? 'disable' : 'enable';
+  const resp = await api('POST', `/users/${username}/${action}`);
+  if (resp.ok) { toast(`User ${action}d.`, 'success'); loadUsers(); }
+  else { const d = await resp.json(); toast(d.detail, 'error'); }
+}
+
+async function resetPwd(username) {
+  showConfirmModal({
+    title: 'Reset password',
+    message: `Reset password for "${username}"?`,
+    confirmLabel: 'Reset',
+    onConfirm: async () => {
+      const resp = await api('POST', `/users/${username}/reset-password`);
+      if (resp.ok) {
+        const d = await resp.json();
+        alert(`New temporary password:\n\n${d.temporary_password}\n\nShare this securely with the user.`);
+      } else {
+        const d = await resp.json();
+        toast(d.detail, 'error');
+      }
+    },
+  });
+}
+
+async function deleteUser(username) {
+  showConfirmModal({
+    title: 'Delete user',
+    message: `Delete user "${username}"? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      const resp = await api('DELETE', `/users/${username}`);
+      if (resp.ok) {
+        toast('User deleted.', 'success');
+        loadUsers();
+      } else {
+        const d = await resp.json();
+        toast(d.detail, 'error');
+      }
+    },
+  });
+}
+
+// ── LOGS ─────────────────────────────────────────────────────────
+
+async function loadLogs() {
+  const filter = document.getElementById('log-filter').value.trim();
+  const url = `/logs/?lines=200${filter ? '&filter=' + encodeURIComponent(filter) : ''}`;
+  const resp = await api('GET', url);
+  if (!resp.ok) return;
+  const data = await resp.json();
+  const lines = data.lines || [];
+  const pre = document.getElementById('log-output');
+  const empty = document.getElementById('logs-empty');
+
+  if (!lines.length) {
+    pre.textContent = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  pre.textContent = lines.join('\n');
+  pre.scrollTop = pre.scrollHeight;
+}
+
+// ── MODALS ───────────────────────────────────────────────────────
+
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function showConfirmModal({ title, message, confirmLabel, onConfirm }) {
+  document.getElementById('confirm-title').textContent = title || 'Confirm action';
+  document.getElementById('confirm-message').textContent = message || 'Are you sure?';
+  document.getElementById('confirm-action-btn').textContent = confirmLabel || 'Confirm';
+  pendingConfirmAction = onConfirm || null;
+  openModal('confirm-modal');
+}
+
+async function runConfirmAction() {
+  const action = pendingConfirmAction;
+  pendingConfirmAction = null;
+  closeModal('confirm-modal');
+  if (action) {
+    await action();
+  }
+}
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.add('hidden');
+  });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (document.getElementById('login-form').style.display !== 'none' &&
+        document.getElementById('login-screen').style.display !== 'none') doLogin();
+    if (document.getElementById('totp-form').style.display !== 'none') doTOTP();
+  }
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
+  }
+});
+
+// ── TOAST ────────────────────────────────────────────────────────
+
+let toastTimer;
+function toast(msg, type = 'info') {
+  clearTimeout(toastTimer);
+  let el = document.getElementById('toast-el');
+  if (!el) { el = document.createElement('div'); el.id = 'toast-el'; document.body.appendChild(el); }
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  toastTimer = setTimeout(() => el.remove(), 3500);
+}
+
+// polyfill for rsplit
+String.prototype.rsplit = function(sep, n) {
+  const parts = this.split(sep);
+  if (n === undefined || parts.length <= n) return parts;
+  return [parts.slice(0, -n).join(sep), ...parts.slice(-n)];
+};
+</script>
+</body>
+</html>

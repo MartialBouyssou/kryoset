@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kryoset — Shared file</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0c0f; --surface: #111418; --border: #1e242d; --border2: #252d38;
+    --accent: #00d4ff; --accent-dim: rgba(0,212,255,0.08);
+    --text: #c8d6e5; --text2: #6b7f94; --text3: #3d4f61;
+    --danger: #ff4444; --danger-dim: rgba(255,68,68,0.1);
+    --success: #00cc66; --success-dim: rgba(0,204,102,0.1);
+    --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 14px; line-height: 1.6;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    width: 100%; max-width: 480px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    padding: 40px;
+  }
+
+  .logo {
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    color: var(--text3); letter-spacing: 0.05em;
+    margin-bottom: 32px;
+  }
+  .logo span { color: var(--accent); }
+
+  .file-icon { font-size: 40px; margin-bottom: 16px; display: block; }
+
+  .file-name {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+    color: var(--text); margin-bottom: 8px; word-break: break-all;
+  }
+
+  .meta {
+    font-family: var(--mono); font-size: 11px; color: var(--text2);
+    display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 28px; padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .meta span { display: flex; align-items: center; gap: 8px; }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block; font-family: var(--mono); font-size: 11px;
+    color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border2);
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+    padding: 8px 12px; outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    letter-spacing: 0.05em; padding: 10px 20px;
+    border: 1px solid; cursor: pointer; transition: all 0.15s;
+    text-transform: uppercase; width: 100%;
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #000; }
+  .btn-primary:hover { background: #00eeff; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .msg {
+    font-family: var(--mono); font-size: 12px; padding: 10px 14px;
+    border: 1px solid; margin-top: 12px;
+  }
+  .msg-error { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
+  .msg-success { border-color: var(--success); color: var(--success); background: var(--success-dim); }
+
+  .state-expired {
+    text-align: center; padding: 16px 0;
+    font-family: var(--mono); font-size: 13px; color: var(--text2);
+  }
+  .state-expired .big { font-size: 40px; display: block; margin-bottom: 12px; }
+
+  footer {
+    margin-top: 24px;
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+    text-align: center;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo"><span>kryoset</span>.nas — shared file</div>
+
+  <div id="loading" style="font-family:var(--mono);font-size:12px;color:var(--text2)">
+    Loading…
+  </div>
+
+  <div id="valid-state" style="display:none">
+    <span class="file-icon" id="file-icon">📄</span>
+    <div class="file-name" id="file-name"></div>
+    <div class="meta" id="file-meta"></div>
+
+    <div id="pwd-section" style="display:none">
+      <div class="field">
+        <label>Password required</label>
+        <input type="password" id="pwd-input" placeholder="Enter link password">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="dl-btn" onclick="download()">
+      ↓ Download
+    </button>
+    <div id="dl-msg"></div>
+  </div>
+
+  <div id="error-state" style="display:none">
+    <div class="state-expired">
+      <span class="big">🔒</span>
+      <div id="error-text"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a href="/">← Back to Kryoset</a>
+</footer>
+
+<script>
+const token = location.pathname.split('/').pop();
+
+function getFileIcon(name) {
+  if (!name) return '📄';
+  const ext = name.split('.').pop().toLowerCase();
+  const map = { pdf:'📄', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', webp:'🖼️',
+    mp4:'🎬', mkv:'🎬', avi:'🎬', mp3:'🎵', flac:'🎵', wav:'🎵',
+    zip:'📦', tar:'📦', gz:'📦', txt:'📝', md:'📝' };
+  return map[ext] || '📄';
+}
+
+async function loadShareInfo() {
+  const resp = await fetch(`/api/shares/info/${token}`);
+  document.getElementById('loading').style.display = 'none';
+
+  if (!resp.ok) {
+    document.getElementById('error-state').style.display = 'block';
+    document.getElementById('error-text').textContent =
+      resp.status === 404 ? 'This link has expired or does not exist.' : 'An error occurred.';
+    return;
+  }
+
+  const data = await resp.json();
+  document.getElementById('valid-state').style.display = 'block';
+
+  const fileName = data.path.split('/').pop();
+  document.getElementById('file-icon').textContent = getFileIcon(fileName);
+  document.getElementById('file-name').textContent = fileName;
+
+  const meta = [];
+  if (data.expires_at) meta.push(`<span>📅 Expires ${new Date(data.expires_at).toLocaleString()}</span>`);
+  else meta.push(`<span>📅 No expiry</span>`);
+  if (data.download_limit) meta.push(`<span>⬇ ${data.download_count}/${data.download_limit} downloads used</span>`);
+  else meta.push(`<span>⬇ ${data.download_count} downloads</span>`);
+  document.getElementById('file-meta').innerHTML = meta.join('');
+
+  if (data.password_protected) {
+    document.getElementById('pwd-section').style.display = 'block';
+  }
+}
+
+async function download() {
+  const btn = document.getElementById('dl-btn');
+  btn.disabled = true;
+  btn.textContent = 'Downloading…';
+
+  const pwd = document.getElementById('pwd-input').value;
+  const url = `/shares/public/${token}${pwd ? '?password=' + encodeURIComponent(pwd) : ''}`;
+
+  const resp = await fetch(url);
+  btn.disabled = false;
+  btn.textContent = '↓ Download';
+
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({ detail: 'Download failed.' }));
+    const msg = document.getElementById('dl-msg');
+    msg.className = 'msg msg-error';
+    msg.textContent = data.detail;
+    return;
+  }
+
+  const disposition = resp.headers.get('content-disposition');
+  let filename = token;
+  if (disposition) {
+    const m = disposition.match(/filename[^;=\n]*=['"]?([^'";\n]*)['"]?/);
+    if (m) filename = m[1];
+  }
+
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+
+  const msg = document.getElementById('dl-msg');
+  msg.className = 'msg msg-success';
+  msg.textContent = '✓ Download started.';
+}
+
+document.getElementById('pwd-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') download();
+});
+
+loadShareInfo();
+</script>
+</body>
+</html>

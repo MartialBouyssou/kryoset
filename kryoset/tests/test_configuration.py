@@ -1,9 +1,3 @@
-"""
-Tests for kryoset.core.configuration.
-
-Covers initialisation, persistence, validation and property access.
-"""
-
 import json
 from pathlib import Path
 

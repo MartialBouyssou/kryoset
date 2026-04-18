@@ -1,10 +1,3 @@
-"""
-Tests for kryoset.core.user_manager.
-
-Covers user creation, deletion, authentication, enable/disable,
-password management and listing.
-"""
-
 import pytest
 
 from kryoset.core.user_manager import UserError, UserManager
@@ -135,3 +128,44 @@ class TestGenerateTemporaryPassword:
     def test_generate_for_nonexistent_user_raises(self, user_manager: UserManager):
         with pytest.raises(UserError, match="does not exist"):
             user_manager.generate_temporary_password("ghost")
+
+
+class TestAdminRole:
+    def test_user_is_not_admin_by_default(self, user_manager_with_alice: UserManager):
+        assert not user_manager_with_alice.is_admin("alice")
+
+    def test_grant_admin_role(self, user_manager_with_alice: UserManager):
+        users = user_manager_with_alice._get_users()
+        users["alice"]["totp_enabled"] = True
+        users["alice"]["totp_secret"] = "TESTSECRET"
+        user_manager_with_alice._save_users(users)
+        user_manager_with_alice.set_admin("alice", admin=True)
+        assert user_manager_with_alice.is_admin("alice")
+
+    def test_revoke_admin_role(self, user_manager_with_alice: UserManager):
+        users = user_manager_with_alice._get_users()
+        users["alice"]["totp_enabled"] = True
+        users["alice"]["totp_secret"] = "TESTSECRET"
+        user_manager_with_alice._save_users(users)
+        user_manager_with_alice.set_admin("alice", admin=True)
+        user_manager_with_alice.set_admin("alice", admin=False)
+        assert not user_manager_with_alice.is_admin("alice")
+
+    def test_grant_admin_without_totp_raises(self, user_manager_with_alice: UserManager):
+        users = user_manager_with_alice._get_users()
+        users["root"] = {
+            "password_hash": users["alice"]["password_hash"],
+            "enabled": True,
+            "admin": True,
+            "totp_enabled": True,
+        }
+        user_manager_with_alice._save_users(users)
+        with pytest.raises(UserError, match="must enable TOTP"):
+            user_manager_with_alice.set_admin("alice", admin=True)
+
+    def test_set_admin_on_nonexistent_user_raises(self, user_manager: UserManager):
+        with pytest.raises(UserError, match="does not exist"):
+            user_manager.set_admin("ghost", admin=True)
+
+    def test_is_admin_returns_false_for_nonexistent_user(self, user_manager: UserManager):
+        assert not user_manager.is_admin("ghost")
