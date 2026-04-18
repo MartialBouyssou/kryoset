@@ -198,5 +198,10 @@ class UserManager:
         users = self._get_users()
         if username not in users:
             raise UserError(f"User '{username}' does not exist.")
+        has_existing_admin = any(record.get("admin", False) for record in users.values())
+        if admin and has_existing_admin and not users[username].get("totp_enabled", False):
+            raise UserError(
+                f"User '{username}' must enable TOTP (A2F) before admin role can be granted."
+            )
         users[username]["admin"] = admin
         self._save_users(users)

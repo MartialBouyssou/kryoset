@@ -7,48 +7,30 @@
 
 ---
 
-## Features (v0.1.0)
+## Features
 
-- **SFTP server** — industry-standard encrypted file transfer (SSH under the hood)
-  - Compatible with any standard SFTP client
-  - Async I/O for handling multiple concurrent connections
-- **User management** — add, remove, enable/disable users via CLI
-  - Passwords never stored in plain text
-  - Support for account suspension without data loss
-- **Secure passwords** — bcrypt hashing with anti-timing-attack protection
-  - Configurable work factor (default: 12 rounds)
-  - Safe comparison prevents timing-based password guessing
-- **Per-session chroot** — clients confined to the configured storage directory
-  - Each connection gets isolated filesystem view
-  - Prevents accidental or malicious data access outside storage path
-- **Anti-traversal protection** — directory traversal attacks blocked at protocol layer
-  - Path validation on all filesystem operations
-  - Symlink checking to prevent escape attempts
-- **Audit logging** — track authentication and file operations
-  - Logs stored in `~/.kryoset/logs/`
-  - Follow logs in real-time with `kryoset logs --follow`
-- **Granular permissions engine** — per user/group rules on any path
-  - 10 permission flags (LIST, DOWNLOAD, UPLOAD, DELETE, SHARE, etc.)
-  - Rule constraints: expiry, active hours, IP whitelist/blacklist, delegation
-  - Effective permission resolution across parent/child paths
-- **Groups and delegation** — reusable access management
-  - Create groups and assign members
-  - Grant rules to users or groups
-  - Delegate permission administration on sub-paths
-- **Share link store** — create and revoke token-based links
-  - Optional expiry, password and download limit metadata
+- **SFTP server** — industry-standard encrypted file transfer (SSH under the hood), compatible with any standard SFTP client
+- **User management** — add, remove, enable/disable, promote users via CLI; passwords stored as bcrypt hashes with anti-timing-attack protection
+- **Two-factor authentication (TOTP)** — per-user opt-in via Google Authenticator, Authy or any TOTP app; QR-code provisioning; enforced at SSH level via keyboard-interactive
+- **Granular permissions engine** — 10 combinable permission flags (LIST, DOWNLOAD, UPLOAD, DELETE, SHARE, MANAGE_PERMS, …) assigned to users or groups on any path
+- **Groups and delegation** — create groups, assign members, grant rules at group level, delegate permission management to team leads
+- **Rule constraints** — expiry date, active hours (e.g. weekdays only), IP whitelist/blacklist, optional path password
+- **Share links** — create time-limited token-based links with optional password and download counter
+- **Virtual control channel** — remote users manage their own share links and delegated permissions via `/.kryoset/` inside SFTP (REST-ready design)
+- **Per-user storage quotas** — admins set byte limits per user; admin accounts are always exempt
+- **Audit logging** — Paris-timezone timestamps, daily rotation, gzip compression, configurable retention by age and total size; events include TOTP, quota and permission-denied entries
+- **Anti-traversal protection** — all filesystem operations validated; chroot per session
 - **Cross-platform** — Linux and Windows (Python 3.11+)
 
 ## Roadmap
 
-**v0.2.0** (planned)
-- [ ] Two-factor authentication (TOTP)
-- [ ] Per-user storage quotas
-- [ ] Improved audit log retention policies
-
-**v0.3.0+** (future)
+**Next**
 - [ ] REST API with HTTPS
-- [ ] Web dashboard for user management
+- [ ] Web dashboard
+
+**Future**
+- [ ] Prometheus metrics export
+- [ ] iOS / Android client app
 
 ---
 
@@ -77,82 +59,81 @@ pip install -e ".[dev]"
 
 ### 1 — Initialize the server
 
-Point Kryoset at the directory (or mount point) you want to share:
-
 ```bash
-# Basic setup with default port 2222
 kryoset init /mnt/my_disk
-
-# Or choose a custom port
+# Custom port
 kryoset init /mnt/my_disk --port 3333
-
-# Or use a custom config location
-kryoset init /mnt/my_disk --port 2222 --config ~/.my_kryoset_config
 ```
-
-This creates `~/.kryoset/config.json` with your settings and generates an SSH host key.
 
 ### 2 — Add users
 
 ```bash
-# Create users (you'll be prompted for a password)
-kryoset user add alice
-kryoset user add bob
-
-# List all users
+kryoset user add alice          # prompts for password
 kryoset user list
-# Output:
-# Username             Status
-# ------------------------------
-# alice                enabled
-# bob                  enabled
-
-# Disable a user without deleting their data
 kryoset user disable alice
-
-# Re-enable the user
 kryoset user enable alice
-
-# Reset a user's password to a temporary random one
 kryoset user reset-password alice
-# Output: [ok] New password for 'alice': Tr0pic@l_Fr3edomX42
+kryoset user set-admin alice    # grant admin role
 ```
 
-### 3 — Start the server
+### 3 — Set up two-factor authentication (optional, per user)
+
+```bash
+# Generate secret and display provisioning URI + QR code instructions
+kryoset user totp setup alice
+
+# Scan the URI with your authenticator app, then confirm with a live code
+kryoset user totp confirm alice 123456
+
+# Check status
+kryoset user totp status alice
+
+# Disable if needed
+kryoset user totp disable alice
+```
+
+Once confirmed, the next time Alice connects she will be asked for her password **and** her TOTP code:
+
+```
+alice@server's password:
+TOTP code (6 digits):
+```
+
+### 4 — Set storage quotas (admin only)
+
+```bash
+kryoset user quota set alice 10GB
+kryoset user quota set bob 500MB
+kryoset user quota set charlie none    # remove quota (unlimited)
+
+kryoset user quota status alice        # alice: 1.2 GB used / 10.0 GB quota (12%)
+kryoset user quota list                # all users at a glance
+```
+
+### 5 — Start the server
 
 ```bash
 kryoset start
 ```
 
-The server will run in the foreground. Press `Ctrl-C` to stop it.
+Press `Ctrl-C` to stop.
 
-```
-[2026-04-11 14:22:33,045] [INFO] Kryoset SFTP server starting on 0.0.0.0:2222
-[2026-04-11 14:22:33,052] [INFO] Storage directory: /mnt/my_disk
-[2026-04-11 14:22:33,055] [INFO] Listening for connections...
-```
-
-### 4 — Connect with an SFTP client
-
-In another terminal:
+### 6 — Connect with an SFTP client
 
 ```bash
 sftp -P 2222 alice@localhost
-# Connected to localhost.
-# sftp> ls
-# file1.txt  folder/  document.pdf
-# sftp> get file1.txt
-# Fetching /file1.txt to file1.txt
-# sftp> put local_file.txt
-# Uploading local_file.txt to /local_file.txt
-# sftp> exit
 ```
 
-### 5 — Add a first permission rule
+GUI clients (FileZilla, Cyberduck, WinSCP): Protocol = SFTP, Port = 2222.
+
+### 7 — Add permission rules
 
 ```bash
-# Give alice read-only access to /projects
+# Read-only access for alice on /projects
 kryoset perm add --path /projects --user alice -p LIST -p PREVIEW -p DOWNLOAD
+
+# Full access for the editors group on /shared
+kryoset perm add --path /shared --group editors -p LIST -p DOWNLOAD -p UPLOAD -p RENAME -p MOVE -p DELETE
 
 # Check effective permissions
 kryoset perm check alice /projects
@@ -162,265 +143,141 @@ kryoset perm check alice /projects
 
 ## CLI Reference
 
-### Server Management
+### Server
 
-```bash
+```
 kryoset init <STORAGE_PATH> [--port PORT] [--config PATH]
-    Initialize a new Kryoset server instance.
-    
-    STORAGE_PATH    Directory to share over SFTP
-    --port PORT     SFTP listening port (default: 2222)
-    --config PATH   Custom configuration file location
-
 kryoset start [--config PATH]
-    Start the SFTP server (blocking).
-    Press Ctrl-C to stop.
 ```
 
-### User Management
+### Users
 
-```bash
-kryoset user add <USERNAME> [--config PATH]
-    Create a new user (prompts for password).
+```
+kryoset user add <USERNAME>
+kryoset user list
+kryoset user remove <USERNAME>
+kryoset user enable <USERNAME>
+kryoset user disable <USERNAME>
+kryoset user change-password <USERNAME>
+kryoset user reset-password <USERNAME>
+kryoset user set-admin <USERNAME> [--revoke]
 
-kryoset user list [--config PATH]
-    Display all users with their status (enabled/disabled).
+kryoset user totp setup <USERNAME>          Generate secret + provisioning URI
+kryoset user totp confirm <USERNAME> <CODE> Activate TOTP after scanning QR
+kryoset user totp disable <USERNAME>        Deactivate TOTP
+kryoset user totp status <USERNAME>         Show enabled/disabled
 
-kryoset user remove <USERNAME> [--config PATH]
-    Delete a user account and all its data.
-
-kryoset user enable <USERNAME> [--config PATH]
-    Enable a previously disabled account.
-
-kryoset user disable <USERNAME> [--config PATH]
-    Disable an account without deleting data.
-
-kryoset user change-password <USERNAME> [--config PATH]
-    Update a user's password (prompts for new password).
-
-kryoset user reset-password <USERNAME> [--config PATH]
-    Generate a random temporary password and display it.
-
-kryoset user set-admin <USERNAME> [--revoke] [--config PATH]
-  Grant or revoke admin role.
+kryoset user quota set <USERNAME> <SIZE>    e.g. 10GB, 500MB, none
+kryoset user quota status <USERNAME>
+kryoset user quota list
 ```
 
-### Group Management
+### Groups
 
-```bash
-kryoset group create <GROUP_NAME>
-  Create an empty group.
-
-kryoset group delete <GROUP_NAME>
-  Delete a group and its associated membership/rules.
-
+```
+kryoset group create <GROUP>
+kryoset group delete <GROUP>
 kryoset group list
-  List groups and members.
-
-kryoset group add-member <GROUP_NAME> <USERNAME>
-  Add user to a group.
-
-kryoset group remove-member <GROUP_NAME> <USERNAME>
-  Remove user from a group.
+kryoset group add-member <GROUP> <USERNAME>
+kryoset group remove-member <GROUP> <USERNAME>
 ```
 
-### Permission Management
+### Permissions
 
-```bash
-kryoset perm add \
-  --path /PATH \
-  (--user USERNAME | --group GROUP_NAME) \
-  -p FLAG [-p FLAG ...] \
-  [--expires 24h|7d|ISO_DATE] \
-  [--password] \
-  [--quota 500MB|2GB] \
-  [--download-limit N] \
-  [--ip-whitelist CIDR[,CIDR...]] \
-  [--ip-blacklist CIDR[,CIDR...]] \
-  [--can-delegate] \
-  [--hours mon-fri:09-18]
+```
+kryoset perm add --path PATH (--user U | --group G) -p FLAG [-p FLAG ...]
+             [--expires 24h|7d|ISO_DATE]
+             [--password]
+             [--quota 500MB|2GB]
+             [--download-limit N]
+             [--ip-whitelist CIDR[,CIDR]]
+             [--ip-blacklist CIDR[,CIDR]]
+             [--can-delegate]
+             [--hours mon-fri:09-18]
 
-kryoset perm list [--path /PREFIX]
-  List rules (optionally filtered by path prefix).
-
+kryoset perm list [--path PREFIX]
 kryoset perm remove <RULE_ID>
-  Remove a rule by ID.
-
 kryoset perm check <USERNAME> <PATH>
-  Show effective permissions on a path.
 ```
 
 ### Share Links
 
-```bash
-kryoset share create \
-  --path /PATH \
-  --user USERNAME \
-  [-p DOWNLOAD] [-p LIST] \
-  [--expires 24h|7d|ISO_DATE] \
-  [--download-limit N] \
-  [--password]
-
+```
+kryoset share create --path PATH --user USERNAME
+              [-p DOWNLOAD] [--expires 24h] [--download-limit N] [--password]
 kryoset share list [--user USERNAME]
-  List share links.
-
 kryoset share revoke <TOKEN>
-  Revoke a share link.
 ```
 
-### Auditing & Logs
+### Logs
 
-```bash
+```
 kryoset logs [-n LINES] [--follow] [--filter TEXT]
-    Display the audit log.
-    
-    -n LINES        Number of lines to display (default: 50)
-    --follow, -f    Follow log in real-time (like tail -f)
-    --filter TEXT   Show only lines containing TEXT (e.g., AUTH_FAILURE)
 ```
-
----
-
-## Connecting to the server
-
-Use any standard SFTP client:
-
-```bash
-# Command-line SFTP
-sftp -P 2222 alice@your-server-ip
-
-# Or with verbose output for debugging
-sftp -P 2222 -v alice@your-server-ip
-```
-
-**GUI Clients:** FileZilla, Cyberduck, WinSCP — configure:
-- **Host:** your server IP/hostname
-- **Protocol:** SFTP
-- **Port:** 2222 (or your custom port)
-- **Username:** alice (your Kryoset username)
-- **Password:** your password
 
 ---
 
 ## Configuration
 
-Kryoset stores its configuration and state in `~/.kryoset/`:
+All state lives in `~/.kryoset/` (all files mode `600`):
 
 ```
 ~/.kryoset/
-├── config.json          Main configuration (storage path, port, users)
-├── host_key             Server SSH host key (generated on first start)
-├── permissions.db       SQLite database (groups, rules, share links)
+├── config.json        Server config (storage path, port, users + TOTP secrets + quotas)
+├── host_key           SSH host key (generated on first start — back it up)
+├── permissions.db     SQLite: groups, rules, share links, upload usage
 └── logs/
-  └── kryoset.log      Audit log (rotated daily)
+    ├── kryoset.log    Live audit log (Paris timezone, CEST/CET)
+    └── kryoset.log.YYYY-MM-DD.gz   Rotated + gzip-compressed archives
 ```
-
-All files are protected with mode `600` (read/write owner only).
-
-To use a custom config location, pass `--config /path/to/config.json` to any command.
 
 ---
 
 ## Audit Logging
 
-Kryoset logs authentication attempts and file operations to `~/.kryoset/logs/`:
+Events are written with Paris-timezone timestamps (CEST/CET). Rotated files are compressed with gzip. Default retention: 30 days or 500 MB total, whichever is hit first.
 
 ```bash
-# View last 50 lines of audit log
-kryoset logs
-
-# Follow log in real-time
-kryoset logs --follow
-
-# Find all failed authentication attempts
-kryoset logs --filter AUTH_FAILURE
-
-# Show last 100 lines
-kryoset logs -n 100
+kryoset logs                        # last 50 lines
+kryoset logs --follow               # live tail
+kryoset logs --filter AUTH_FAILURE  # filter by event type
+kryoset logs -n 200
 ```
 
-Common event labels in logs:
-- `AUTH_SUCCESS`, `AUTH_FAILURE`
-- `CONNECT`, `DISCONNECT`
-- `FILE_READ`, `FILE_WRITE`, `FILE_DELETE`, `FILE_RENAME`
-- `MKDIR`, `RMDIR`
+Event labels: `AUTH_SUCCESS`, `AUTH_FAILURE`, `TOTP_SUCCESS`, `TOTP_FAILURE`, `CONNECT`, `DISCONNECT`, `FILE_READ`, `FILE_WRITE`, `FILE_DELETE`, `FILE_RENAME`, `MKDIR`, `RMDIR`, `QUOTA_EXCEEDED`, `PERM_DENIED`.
 
 Example:
 
 ```text
-[2026-04-14 20:31:08] [AUTH_SUCCESS  ] user=alice ip=192.168.1.44
-[2026-04-14 20:31:12] [FILE_READ     ] user=alice path=/projects/spec.pdf
-[2026-04-14 20:31:16] [FILE_WRITE    ] user=alice path=/projects/notes.txt
+[2026-04-15 09:31:08 CEST] [AUTH_SUCCESS  ] user=alice ip=192.168.1.44
+[2026-04-15 09:31:09 CEST] [TOTP_SUCCESS  ] user=alice ip=192.168.1.44
+[2026-04-15 09:31:12 CEST] [FILE_READ     ] user=alice path=/projects/spec.pdf
 ```
 
 ---
 
 ## Permissions Guide
 
-Detailed permissions model, practical examples, delegation workflows, and control-channel usage are documented in:
-
-- [PERMISSION.md](PERMISSION.md)
+See [PERMISSION.md](PERMISSION.md) for the full permission model, resolution algorithm, delegation workflows and control-channel usage.
 
 ---
 
 ## Running Tests
 
-Run the full test suite:
-
 ```bash
-pytest                 # Run all tests
-pytest -v              # Verbose output
-pytest --cov           # With coverage report
-pytest -k test_name    # Run specific test
+pytest           # all tests
+pytest -v        # verbose
+pytest --cov     # with coverage
 ```
-
-Test coverage includes:
-- Configuration loading and validation
-- User manager (create, delete, enable/disable, password hashing)
-- SFTP path resolution and security (anti-traversal)
-- Authentication and session management
-
----
-
-## Technical Details
-
-### Architecture
-
-- **SFTP Server:** Built on Paramiko (OpenSSH-compatible SSH implementation)
-- **Authentication:** Bcrypt password hashing with constant-time comparison
-- **Confinement:** Per-session chroot restricts user access to storage directory
-- **Security:** Directory traversal attacks blocked at protocol layer
-
-### Security Hardening
-
-1. **Password Storage:** Bcrypt with configurable rounds (12 by default)
-2. **Anti-Timing Attacks:** Password comparison completed in constant time
-3. **Session Isolation:** Each SFTP connection has its own process space
-4. **Path Validation:** All filesystem operations validated before execution
-5. **Permissions:** Config files created with restrictive permissions (600)
-
-### Dependencies
-
-- **paramiko (≥3.4.0)** — SSH protocol and SFTP server implementation  
-- **bcrypt (≥4.1.0)** — Password hashing
-- **click (≥8.1.0)** — CLI framework
 
 ---
 
 ## Security Notes
 
-⚠️ **Important Security Practices:**
-
-- The server host key is generated on first start and stored at
-  `~/.kryoset/host_key` (mode `600`). **Back this up securely** if running multiple instances.
-- The configuration file (`~/.kryoset/config.json`) is protected with
-  mode `600` and contains bcrypt password hashes.
-- **Never expose** port 2222 to the internet without protection. Use:
-  - Firewall rules to restrict IP access
-  - SSH tunnelling for remote access: `ssh -L 2222:localhost:2222 user@server`
-  - VPN to connect securely
-- Store the host key safely; if lost, clients will see a "host key changed" warning on reconnect
-- Audit the logs regularly for suspicious authentication attempts
+- Never expose port 2222 to the internet without a firewall rule. Use VPN or SSH tunnelling.
+- Back up `~/.kryoset/host_key` — clients will warn if it changes.
+- Enable TOTP for all accounts that need remote access.
+- Review `kryoset logs --filter AUTH_FAILURE` regularly.
 
 ---
 

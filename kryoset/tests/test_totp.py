@@ -140,3 +140,109 @@ class TestGetQrCodePng:
         png = totp_manager.get_qr_code_png("alice")
         assert isinstance(png, bytes)
         assert png[:4] == b"\x89PNG"
+
+
+class TestServerInterfaceTOTP:
+    """Test that KryosetServerInterface correctly enforces TOTP."""
+
+    def _make_server_interface(self, user_manager, tmp_path):
+        from unittest.mock import MagicMock
+        from kryoset.core.sftp_server import KryosetServerInterface
+        from kryoset.core.audit_logger import AuditLogger
+        from kryoset.core.permission_store import PermissionStore
+        from kryoset.core.totp import TOTPManager
+
+        audit = AuditLogger(log_directory=tmp_path / "logs")
+        store = PermissionStore(db_path=tmp_path / "perms.db")
+        store.initialize()
+        totp_mgr = TOTPManager(user_manager)
+
+        return KryosetServerInterface(
+            user_manager=user_manager,
+            storage_path=tmp_path / "storage",
+            audit_logger=audit,
+            permission_store=store,
+            client_address=("127.0.0.1", 12345),
+            totp_manager=totp_mgr,
+        )
+
+    def test_password_only_sufficient_when_totp_disabled(self, user_manager, tmp_path):
+        import paramiko
+        server = self._make_server_interface(user_manager, tmp_path)
+        result = server.check_auth_password("alice", "securepassword1")
+        assert result == paramiko.AUTH_SUCCESSFUL
+
+    def test_password_returns_partial_when_totp_enabled(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        result = server.check_auth_password("alice", "securepassword1")
+        assert result == paramiko.AUTH_PARTIALLY_SUCCESSFUL
+
+    def test_get_allowed_auths_no_totp(self, user_manager, tmp_path):
+        server = self._make_server_interface(user_manager, tmp_path)
+        assert server.get_allowed_auths("alice") == "password"
+
+    def test_get_allowed_auths_with_totp(self, user_manager, tmp_path):
+        import pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        auths = server.get_allowed_auths("alice")
+        assert "keyboard-interactive" in auths
+        assert "password" in auths
+
+    def test_valid_totp_code_grants_access(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        server.check_auth_password("alice", "securepassword1")
+
+        fresh_code = pyotp.TOTP(secret).now()
+        result = server.check_auth_interactive_response([fresh_code])
+        assert result == paramiko.AUTH_SUCCESSFUL
+
+    def test_invalid_totp_code_fails(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        server.check_auth_password("alice", "securepassword1")
+
+        result = server.check_auth_interactive_response(["000000"])
+        assert result == paramiko.AUTH_FAILED
+
+    def test_empty_response_fails(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        server.check_auth_password("alice", "securepassword1")
+
+        result = server.check_auth_interactive_response([])
+        assert result == paramiko.AUTH_FAILED
+
+    def test_totp_prompt_contains_instructions(self, user_manager, tmp_path):
+        server = self._make_server_interface(user_manager, tmp_path)
+        prompts = server.get_auth_interactive_prompt("alice", "", "", [])
+        assert len(prompts) == 1
+        prompt_text, echo = prompts[0]
+        assert "TOTP" in prompt_text or "code" in prompt_text.lower()
+        assert echo is False

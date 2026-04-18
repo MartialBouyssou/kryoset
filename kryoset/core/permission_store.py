@@ -290,6 +290,54 @@ class PermissionStore:
             if cursor.rowcount == 0:
                 raise PermissionStoreError(f"Rule #{rule_id} does not exist.")
 
+    def update_rule(self, rule_id: int, rule: PermissionRule) -> None:
+        """
+        Update an existing permission rule.
+
+        Args:
+            rule_id: ID of the rule to update.
+            rule: New rule values (its own ``rule_id`` is ignored).
+
+        Raises:
+            PermissionStoreError: If the rule does not exist.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE permission_rules
+                SET subject_type = ?,
+                    subject_id = ?,
+                    path = ?,
+                    permissions = ?,
+                    password_hash = ?,
+                    expires_at = ?,
+                    time_windows = ?,
+                    upload_quota_bytes = ?,
+                    download_limit = ?,
+                    ip_whitelist = ?,
+                    ip_blacklist = ?,
+                    can_delegate = ?
+                WHERE rule_id = ?
+                """,
+                (
+                    rule.subject_type,
+                    rule.subject_id,
+                    rule.path,
+                    json.dumps(rule.permissions.to_names()),
+                    rule.password_hash,
+                    rule.expires_at.isoformat() if rule.expires_at else None,
+                    json.dumps([w.to_dict() for w in rule.time_windows]),
+                    rule.upload_quota_bytes,
+                    rule.download_limit,
+                    json.dumps(rule.ip_whitelist),
+                    json.dumps(rule.ip_blacklist),
+                    int(rule.can_delegate),
+                    rule_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise PermissionStoreError(f"Rule #{rule_id} does not exist.")
+
     def list_rules(self, path_prefix: Optional[str] = None) -> list[PermissionRule]:
         """
         Return all rules, optionally filtered by path prefix.

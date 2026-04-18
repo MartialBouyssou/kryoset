@@ -769,3 +769,62 @@ def quota_list(config: str | None) -> None:
     for entry in users:
         name = entry["username"]
         click.echo(f"{name:<20} {quota_manager.format_quota_summary(name)}")
+
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="IP address to bind to.")
+@click.option("--port", default=8443, show_default=True, help="HTTPS port to listen on.")
+@click.option("--cert", default=None, help="Path to TLS certificate (PEM). Auto-generated if omitted.")
+@click.option("--key", default=None, help="Path to TLS private key (PEM). Auto-generated if omitted.")
+@click.option("--config", default=None, help="Path to the configuration file.")
+@click.option("--reload", is_flag=True, default=False, help="Enable auto-reload (development only).")
+def api(host: str, port: int, cert: str | None, key: str | None, config: str | None, reload: bool) -> None:
+    """Start the Kryoset REST API server over HTTPS."""
+    import uvicorn
+    from kryoset.api.app import create_app
+    from kryoset.api.tls import generate_self_signed_cert
+    from kryoset.core.audit_logger import AuditLogger
+    from kryoset.core.permission_store import PermissionStore
+    import kryoset.api._runner as _runner
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+
+    if cert and key:
+        cert_path = Path(cert)
+        key_path = Path(key)
+    else:
+        cert_path, key_path = generate_self_signed_cert()
+        click.echo(f"[tls] Using certificate: {cert_path}")
+        click.echo(f"[tls] Key: {key_path}")
+
+    audit_logger = AuditLogger()
+    permission_store = PermissionStore()
+    permission_store.initialize()
+
+    _runner._app = create_app(
+        configuration=configuration,
+        user_manager=user_manager,
+        audit_logger=audit_logger,
+        permission_store=permission_store,
+    )
+
+    click.echo(f"[api] Starting Kryoset API on https://{host}:{port}")
+    uvicorn.run(
+        "kryoset.api._runner:_app",
+        host=host,
+        port=port,
+        ssl_certfile=str(cert_path),
+        ssl_keyfile=str(key_path),
+        reload=False,
+    )
+
+    """
+    uvicorn.run(
+        app, 
+        host='127.0.0.1', 
+        port=8444, 
+        ssl_certfile='/home/martial/.kryoset/api_cert.pem', 
+        ssl_keyfile='/home/martial/.kryoset/api_key.pem'
+    )
+    """

@@ -424,7 +424,63 @@ class KryosetServerInterface(paramiko.ServerInterface):
         return paramiko.AUTH_FAILED
 
     def check_auth_interactive(self, username: str, submethods: str) -> int:
+        """
+        Entry point for keyboard-interactive authentication (second factor).
+
+        Called by Paramiko when the client requests keyboard-interactive auth.
+        The actual TOTP code verification happens in
+        :meth:`check_auth_interactive_response` which Paramiko calls with the
+        user's typed response to our prompt.
+        """
+        if not self._totp_manager or not self._totp_manager.is_enabled(username):
+            return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_SUCCESSFUL
+
+    def get_auth_interactive_prompt(
+        self, username: str, instruction: str, lang: str, prompts: list
+    ) -> list:
+        """
+        Return the challenge prompt shown to the client in their terminal.
+
+        OpenSSH displays the prompt string and waits for the user to type
+        their 6-digit TOTP code. The second element (False) means the
+        response is not echoed (behaves like a password field).
+        """
+        return [("TOTP code (6 digits): ", False)]
+
+    def check_auth_interactive_response(self, responses: list) -> int:
+        """
+        Verify the TOTP code submitted by the client.
+
+        Called by Paramiko once per keyboard-interactive exchange with the
+        list of strings the user typed in response to our prompts.
+
+        Args:
+            responses: List of user-typed strings (one per prompt).
+
+        Returns:
+            AUTH_SUCCESSFUL if the code is valid, AUTH_FAILED otherwise.
+        """
+        username = self.authenticated_username
+        if not username:
+            return paramiko.AUTH_FAILED
+
+        if not self._totp_manager or not self._totp_manager.is_enabled(username):
+            return paramiko.AUTH_SUCCESSFUL
+
+        if not responses:
+            self._audit_logger.log_totp_failure(username, self.client_ip)
+            return paramiko.AUTH_FAILED
+
+        code = responses[0].strip()
+        if self._totp_manager.verify(username, code):
+            self._audit_logger.log_totp_success(username, self.client_ip)
+            logger.info("TOTP verified for user '%s'.", username)
+            return paramiko.AUTH_SUCCESSFUL
+
+        self._audit_logger.log_totp_failure(username, self.client_ip)
+        logger.warning("TOTP failure for user '%s'.", username)
+        return paramiko.AUTH_FAILED
 
     def check_auth_gssapi_with_mic(self, username: str, gss_authenticated: int, cc_file: str) -> int:
         return paramiko.AUTH_FAILED
@@ -436,7 +492,17 @@ class KryosetServerInterface(paramiko.ServerInterface):
         return paramiko.AUTH_FAILED
 
     def get_allowed_auths(self, username: str) -> str:
-        return "password,keyboard-interactive"
+        """
+        Advertise accepted authentication methods to the client.
+
+        When TOTP is active for this user, the SSH client is told it must
+        perform both password and keyboard-interactive (TOTP) steps.
+        When TOTP is disabled, password alone is sufficient.
+        """
+        if self._totp_manager and self._totp_manager.is_enabled(username):
+            return "password,keyboard-interactive"
+        return "password"
+
 
     def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes) -> bool:
         return False
