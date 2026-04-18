@@ -134,6 +134,58 @@ class TestResolvePermissions:
         perms, _ = store.resolve_permissions("alice", "/docs")
         assert Permission.UPLOAD in perms
 
+    def test_group_rule_is_materialized_to_existing_members(self, store):
+        store.create_group("editors")
+        store.add_group_member("editors", "alice")
+        store.add_rule(PermissionRule(
+            subject_type="group", subject_id="editors",
+            path="/docs", permissions=Permission.LIST | Permission.DOWNLOAD,
+        ))
+
+        user_rules = [
+            r for r in store.list_rules()
+            if r.subject_type == "user" and r.subject_id == "alice" and r.path == "/docs"
+        ]
+        assert len(user_rules) == 1
+        assert Permission.LIST in user_rules[0].permissions
+        assert Permission.DOWNLOAD in user_rules[0].permissions
+
+    def test_existing_group_rules_are_materialized_when_member_is_added(self, store):
+        store.create_group("editors")
+        store.add_rule(PermissionRule(
+            subject_type="group", subject_id="editors",
+            path="/projects", permissions=Permission.UPLOAD,
+        ))
+
+        store.add_group_member("editors", "alice")
+        user_rules = [
+            r for r in store.list_rules()
+            if r.subject_type == "user" and r.subject_id == "alice" and r.path == "/projects"
+        ]
+        assert len(user_rules) == 1
+        assert Permission.UPLOAD in user_rules[0].permissions
+
+    def test_materialization_merges_with_existing_user_rule(self, store):
+        store.create_group("editors")
+        store.add_rule(PermissionRule(
+            subject_type="user", subject_id="alice",
+            path="/team", permissions=Permission.LIST,
+        ))
+        store.add_group_member("editors", "alice")
+
+        store.add_rule(PermissionRule(
+            subject_type="group", subject_id="editors",
+            path="/team", permissions=Permission.DOWNLOAD,
+        ))
+
+        user_rules = [
+            r for r in store.list_rules()
+            if r.subject_type == "user" and r.subject_id == "alice" and r.path == "/team"
+        ]
+        assert len(user_rules) == 1
+        assert Permission.LIST in user_rules[0].permissions
+        assert Permission.DOWNLOAD in user_rules[0].permissions
+
     def test_user_rule_overrides_group_rule(self, store):
         store.create_group("editors")
         store.add_group_member("editors", "alice")

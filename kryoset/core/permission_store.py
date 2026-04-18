@@ -203,6 +203,16 @@ class PermissionStore:
                     "INSERT INTO group_members (group_name, username) VALUES (?, ?)",
                     (group_name, username),
                 )
+
+                group_rules = conn.execute(
+                    """
+                    SELECT * FROM permission_rules
+                    WHERE subject_type = 'group' AND subject_id = ?
+                    """,
+                    (group_name,),
+                ).fetchall()
+                for row in group_rules:
+                    self._upsert_user_rule_from_group(conn, username, self._rule_from_row(row))
         except sqlite3.IntegrityError as error:
             if "FOREIGN KEY" in str(error):
                 raise PermissionStoreError(f"Group '{group_name}' does not exist.")
@@ -274,7 +284,74 @@ class PermissionStore:
                     int(rule.can_delegate),
                 ),
             )
-            return cursor.lastrowid
+            rule_id = cursor.lastrowid
+
+            if rule.subject_type == "group":
+                members = conn.execute(
+                    "SELECT username FROM group_members WHERE group_name = ?",
+                    (rule.subject_id,),
+                ).fetchall()
+                for member in members:
+                    self._upsert_user_rule_from_group(conn, member["username"], rule)
+
+            return rule_id
+
+    def _upsert_user_rule_from_group(
+        self,
+        conn: sqlite3.Connection,
+        username: str,
+        group_rule: PermissionRule,
+    ) -> None:
+        """
+        Merge a group's rule into the user's direct rules on the same path.
+
+        This materializes group permissions onto users so the user keeps the
+        same permissions as the group by default, while still allowing
+        user-specific edits later.
+        """
+        existing = conn.execute(
+            """
+            SELECT * FROM permission_rules
+            WHERE subject_type = 'user' AND subject_id = ? AND path = ?
+            ORDER BY rule_id DESC
+            LIMIT 1
+            """,
+            (username, group_rule.path),
+        ).fetchone()
+
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO permission_rules (
+                    subject_type, subject_id, path, permissions,
+                    password_hash, expires_at, time_windows,
+                    upload_quota_bytes, download_limit,
+                    ip_whitelist, ip_blacklist, can_delegate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "user",
+                    username,
+                    group_rule.path,
+                    json.dumps(group_rule.permissions.to_names()),
+                    group_rule.password_hash,
+                    group_rule.expires_at.isoformat() if group_rule.expires_at else None,
+                    json.dumps([w.to_dict() for w in group_rule.time_windows]),
+                    group_rule.upload_quota_bytes,
+                    group_rule.download_limit,
+                    json.dumps(group_rule.ip_whitelist),
+                    json.dumps(group_rule.ip_blacklist),
+                    int(group_rule.can_delegate),
+                ),
+            )
+            return
+
+        existing_rule = self._rule_from_row(existing)
+        merged_permissions = existing_rule.permissions | group_rule.permissions
+        conn.execute(
+            "UPDATE permission_rules SET permissions = ? WHERE rule_id = ?",
+            (json.dumps(merged_permissions.to_names()), existing_rule.rule_id),
+        )
 
     def remove_rule(self, rule_id: int) -> None:
         """
@@ -425,7 +502,11 @@ class PermissionStore:
             if not matching:
                 continue
 
-            best = sorted(matching, key=lambda r: r.specificity(), reverse=True)[0]
+            best = sorted(
+                matching,
+                key=lambda r: (r.specificity(), r.rule_id or 0),
+                reverse=True,
+            )[0]
 
             if effective is None:
                 effective = best.permissions
