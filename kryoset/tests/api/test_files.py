@@ -76,6 +76,26 @@ def test_download_with_permission(client, user_token, permission_store, config):
     assert resp.content == b"shared"
 
 
+def test_preview_image_admin(client, admin_token, config):
+    image_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    (config.storage_path / "photo.png").write_bytes(image_bytes)
+
+    resp = client.get("/files/preview?path=photo.png", headers=auth_header(admin_token))
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("image/png")
+    assert "inline" in resp.headers.get("content-disposition", "")
+    assert resp.content == image_bytes
+
+
+def test_preview_unsupported_type_returns_415(client, admin_token, config):
+    (config.storage_path / "archive.zip").write_bytes(b"PK\x03\x04")
+
+    resp = client.get("/files/preview?path=archive.zip", headers=auth_header(admin_token))
+
+    assert resp.status_code == 415
+
+
 def test_upload_file_admin(client, admin_token):
     resp = client.post(
         "/files/upload?path=uploaded.txt",

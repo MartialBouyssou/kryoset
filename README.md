@@ -4,7 +4,7 @@ Secure self-hosted NAS over SFTP, with a REST API and web UI for day-to-day admi
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-success)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.0.1-success)](pyproject.toml)
 
 ## What Kryoset Includes
 
@@ -19,7 +19,7 @@ Secure self-hosted NAS over SFTP, with a REST API and web UI for day-to-day admi
 
 ## Current Status
 
-Kryoset v1.0.0 already provides:
+Kryoset v1.0.1 already provides:
 
 - SFTP service (`kryoset start`)
 - HTTPS REST API (`kryoset api`)
