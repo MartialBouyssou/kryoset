@@ -8,7 +8,9 @@ from typing import Optional
 import paramiko
 
 from kryoset.core.audit_logger import AuditLogger
+from kryoset.core.home_paths import is_within_home, resolve_user_home_roots
 from kryoset.core.quota import QuotaError, QuotaManager
+from kryoset.core.storage_manager import StorageError, StorageManager
 from kryoset.core.totp import TOTPManager
 from kryoset.core.configuration import Configuration
 from kryoset.core.control_channel import ControlChannel, ControlChannelError
@@ -43,6 +45,11 @@ class KryosetSFTPHandle(paramiko.SFTPHandle):
         username: str = "",
         remote_path: str = "",
         is_write: bool = False,
+        storage_manager: Optional["StorageManager"] = None,
+        quota_manager: Optional[QuotaManager] = None,
+        local_path: Optional[Path] = None,
+        initial_size: int = 0,
+        home_path: Optional[str] = None,
     ) -> None:
         super().__init__(flags)
         self._file = file_object
@@ -50,18 +57,46 @@ class KryosetSFTPHandle(paramiko.SFTPHandle):
         self._username = username
         self._remote_path = remote_path
         self._is_write = is_write
+        self._storage_manager = storage_manager
+        self._quota_manager = quota_manager
+        self._local_path = local_path
+        self._initial_size = max(0, int(initial_size))
+        self._home_path = home_path
 
     def read(self, offset: int, length: int) -> bytes:
         self._file.seek(offset)
         return self._file.read(length)
 
     def write(self, offset: int, data: bytes) -> int:
+        """Write a chunk, enforcing per-user and global storage quotas."""
+        if self._storage_manager is not None:
+            try:
+                self._storage_manager.check_upload_allowed(self._username, len(data))
+            except StorageError as quota_error:
+                logger.warning(
+                    "Write blocked mid-transfer for %s: %s", self._username, quota_error
+                )
+                return paramiko.SFTP_PERMISSION_DENIED
         self._file.seek(offset)
         self._file.write(data)
         return paramiko.SFTP_OK
 
     def close(self) -> None:
         self._file.close()
+        if self._is_write and self._quota_manager is not None and self._local_path is not None:
+            final_size = 0
+            try:
+                if self._local_path.exists():
+                    final_size = self._local_path.stat().st_size
+            except OSError:
+                final_size = 0
+            delta = final_size - self._initial_size
+            if delta != 0:
+                self._quota_manager.update_used_bytes(
+                    self._username,
+                    delta,
+                    home_path=self._home_path,
+                )
         if self._audit_logger and self._is_write:
             self._audit_logger.log_file_write(self._username, self._remote_path)
 
@@ -90,13 +125,17 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         storage_path: Path,
         audit_logger: AuditLogger,
         permission_store: PermissionStore,
-        quota_manager: Optional["QuotaManager"] = None,
+        user_manager: Optional[UserManager] = None,
+        storage_manager: Optional["StorageManager"] = None,
+        quota_manager: Optional[QuotaManager] = None,
         *args,
         **kwargs,
     ) -> None:
         self._storage_path = storage_path
         self._audit_logger = audit_logger
         self._permission_store = permission_store
+        self._user_manager = user_manager
+        self._storage_manager = storage_manager
         self._quota_manager = quota_manager
         self._username: str = getattr(server, "authenticated_username", "")
         self._is_admin: bool = getattr(server, "is_admin", False)
@@ -133,6 +172,15 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         """
         if self._is_admin:
             return PRESET_OWNER
+        home_roots = []
+        if self._user_manager is not None:
+            home_roots = resolve_user_home_roots(
+                self._username,
+                self._user_manager,
+                self._permission_store,
+            )
+        if home_roots:
+            return PRESET_OWNER if any(is_within_home(remote_path, root) for root in home_roots) else Permission.NONE
         perms, _ = self._permission_store.resolve_permissions(
             self._username, remote_path, self._client_ip
         )
@@ -145,6 +193,18 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
     def _deny_silently(self) -> int:
         """Return the SFTP 'no such file' code — our silent refusal."""
         return paramiko.SFTP_NO_SUCH_FILE
+
+    def _primary_home_path(self) -> Optional[str]:
+        if self._user_manager is None:
+            return None
+        home_roots = resolve_user_home_roots(
+            self._username,
+            self._user_manager,
+            self._permission_store,
+        )
+        if home_roots:
+            return home_roots[0]
+        return self._user_manager.get_home_path(self._username)
 
     def list_folder(self, path: str):
         if self._control.is_virtual_path(path):
@@ -212,11 +272,25 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return paramiko.SFTP_PERMISSION_DENIED
 
         try:
+            existing_size = real_path.stat().st_size if real_path.exists() else 0
             mode = "rb"
             if flags & os.O_RDWR:
                 mode = "r+b"
             elif flags & os.O_WRONLY:
                 mode = "wb"
+
+            if is_write and self._storage_manager is not None:
+                # For new files we don't yet know the size; we enforce the quota
+                # in KryosetSFTPHandle.write() on every chunk.  For overwrites we
+                # check the *current* file size so the user can at least replace
+                # their own data without being blocked immediately.
+                existing_size = real_path.stat().st_size if real_path.exists() else 0
+                try:
+                    self._storage_manager.check_upload_allowed(self._username, existing_size)
+                except StorageError as quota_error:
+                    logger.warning("Upload blocked for %s: %s", self._username, quota_error)
+                    return paramiko.SFTP_PERMISSION_DENIED
+
             if (flags & os.O_CREAT) and not real_path.exists():
                 real_path.touch()
 
@@ -231,6 +305,11 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
                 username=self._username,
                 remote_path=remote_path,
                 is_write=is_write,
+                storage_manager=self._storage_manager,
+                quota_manager=self._quota_manager,
+                local_path=real_path,
+                initial_size=existing_size,
+                home_path=self._primary_home_path(),
             )
         except OSError as error:
             logger.error("Cannot open %s: %s", real_path, error)
@@ -303,7 +382,14 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         if not self._can(remote_path, Permission.DELETE):
             return self._deny_silently()
         try:
+            removed_size = real_path.stat().st_size if real_path.exists() else 0
             real_path.unlink()
+            if self._quota_manager is not None and removed_size > 0:
+                self._quota_manager.update_used_bytes(
+                    self._username,
+                    -removed_size,
+                    home_path=self._primary_home_path(),
+                )
             self._audit_logger.log_file_delete(self._username, remote_path)
             return paramiko.SFTP_OK
         except OSError as error:
@@ -365,9 +451,52 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             logger.error("Cannot rmdir %s: %s", real_path, error)
             return paramiko.SFTP_FAILURE
 
+    def _ensure_home_exists(self, home_remote: str) -> Path:
+        """
+        Resolve *home_remote* to its physical path and create it if absent.
+
+        Returns the resolved Path so callers can use it directly.
+        """
+        home_real = self._resolve(home_remote)
+        home_real.mkdir(parents=True, exist_ok=True)
+        return home_real
+
     def canonicalize(self, path: str) -> str:
+        """
+        Resolve *path* to the canonical remote path, enforcing home confinement.
+
+        Rules for non-admin users that have a home configured:
+        - On session start (path is '' / '.' / '/') → land inside home root
+          and create the directory if it does not exist yet.
+        - For any other path that falls *outside* the home root → redirect to
+          home root.  This covers clients that send an absolute initial cwd
+          (e.g. "/") as well as any subsequent path that escapes the home.
+        - Paths that are already inside the home root are kept as-is.
+
+        Admins bypass all home restrictions.
+        """
         if self._control.is_virtual_path(path):
             return "/" + path.strip("/")
+
+        if not self._is_admin and self._user_manager is not None:
+            home_roots = resolve_user_home_roots(
+                self._username,
+                self._user_manager,
+                self._permission_store,
+            )
+            if home_roots:
+                home_remote = home_roots[0]
+
+                # Always ensure the home directory exists on disk.
+                self._ensure_home_exists(home_remote)
+
+                normalized = path.strip("/")
+                is_root_or_dot = normalized in ("", ".")
+                outside_home = not is_within_home(path, home_remote)
+
+                if is_root_or_dot or outside_home:
+                    return home_remote
+
         real_path = self._resolve(path)
         return self._to_remote_path(real_path)
 
@@ -518,11 +647,24 @@ def _make_sftp_interface(
     storage_path: Path,
     audit_logger: AuditLogger,
     permission_store: PermissionStore,
-    quota_manager: "QuotaManager",
+    user_manager: UserManager,
+    storage_manager: "StorageManager",
+    quota_manager: Optional[QuotaManager],
 ):
+    """Build a bound SFTP interface class for paramiko, closing over server-wide singletons."""
     class _BoundInterface(KryosetSFTPServerInterface):
         def __init__(self, server, *args, **kwargs):
-            super().__init__(server, storage_path, audit_logger, permission_store, quota_manager, *args, **kwargs)
+            super().__init__(
+                server,
+                storage_path,
+                audit_logger,
+                permission_store,
+                user_manager,
+                storage_manager,
+                quota_manager,
+                *args,
+                **kwargs,
+            )
     return _BoundInterface
 
 
@@ -560,6 +702,7 @@ class SFTPServer:
         self._user_manager = user_manager
         self._audit_logger = audit_logger or AuditLogger()
         self._permission_store = permission_store or PermissionStore()
+        self._storage_manager = StorageManager(configuration, user_manager, permission_store or PermissionStore())
         self._quota_manager = QuotaManager(user_manager, configuration.storage_path)
         self._totp_manager = TOTPManager(user_manager)
         self._host_key = generate_host_key(configuration.host_key_path)
@@ -611,6 +754,8 @@ class SFTPServer:
             self._configuration.storage_path,
             self._audit_logger,
             self._permission_store,
+            self._user_manager,
+            self._storage_manager,
             self._quota_manager,
         )
         transport.set_subsystem_handler("sftp", paramiko.SFTPServer, sftp_interface)

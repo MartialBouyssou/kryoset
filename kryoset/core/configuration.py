@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 DEFAULT_CONFIG_PATH = Path.home() / ".kryoset" / "config.json"
 
@@ -10,6 +10,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "host": "0.0.0.0",
     "port": 2222,
     "host_key_path": str(Path.home() / ".kryoset" / "host_key"),
+    "storage_max_bytes": None,
+    "storage_allocations": {},
     "users": {},
 }
 
@@ -18,7 +20,7 @@ class ConfigurationError(Exception):
     """Raised when the configuration is invalid or cannot be loaded."""
 
 
-class Configuration:
+class   Configuration:
     """
     Reads and writes the Kryoset JSON configuration file.
 
@@ -61,17 +63,26 @@ class Configuration:
             json.dump(self._data, config_file, indent=2)
         os.chmod(self.config_path, 0o600)
 
-    def initialize(self, storage_path: str, port: int = 2222) -> None:
+    def initialize(
+        self,
+        storage_path: str,
+        port: int = 2222,
+        storage_max_bytes: Optional[int] = None,
+    ) -> None:
         """
         Create a fresh configuration with sensible defaults.
 
         Args:
             storage_path: Absolute path to the disk or partition to share.
             port: TCP port the SFTP server will listen on (default 2222).
+            storage_max_bytes: Optional global NAS storage cap in bytes.
+                               When None the server operates without a cap.
         """
         self._data = dict(DEFAULT_CONFIG)
         self._data["storage_path"] = str(storage_path)
         self._data["port"] = port
+        if storage_max_bytes is not None:
+            self._data["storage_max_bytes"] = storage_max_bytes
         self.save()
 
     def validate(self) -> None:

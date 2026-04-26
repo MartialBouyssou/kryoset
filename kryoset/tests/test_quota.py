@@ -70,6 +70,32 @@ class TestGetUsedBytes:
         (subdir / "b.txt").write_bytes(b"x" * 300)
         assert quota_manager.get_used_bytes("alice") == 800
 
+    def test_cached_value_persists_across_manager_instances(self, user_manager, storage: Path):
+        user_dir = storage / "alice"
+        user_dir.mkdir()
+        (user_dir / "seed.bin").write_bytes(b"x" * 100)
+
+        first = QuotaManager(user_manager, storage)
+        assert first.get_used_bytes("alice") == 100
+
+        # Change filesystem after cache warm-up; the next manager should still
+        # read the persisted cached value unless a forced refresh is requested.
+        (user_dir / "later.bin").write_bytes(b"y" * 50)
+        second = QuotaManager(user_manager, storage)
+        assert second.get_used_bytes("alice") == 100
+        assert second.refresh_used_bytes("alice") == 150
+
+    def test_update_used_bytes_adjusts_cached_total(self, quota_manager, storage: Path):
+        user_dir = storage / "alice"
+        user_dir.mkdir()
+        (user_dir / "existing.bin").write_bytes(b"x" * 60)
+
+        assert quota_manager.get_used_bytes("alice") == 60
+        assert quota_manager.update_used_bytes("alice", 40) == 100
+        assert quota_manager.get_used_bytes("alice") == 100
+        assert quota_manager.update_used_bytes("alice", -500) == 0
+        assert quota_manager.get_used_bytes("alice") == 0
+
 
 class TestCheckUploadAllowed:
     def test_allowed_when_no_quota(self, quota_manager):

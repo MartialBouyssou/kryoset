@@ -1,8 +1,11 @@
 import secrets
+from pathlib import Path
+from typing import Optional
 
 import bcrypt
 
 from kryoset.core.configuration import Configuration
+from kryoset.core.home_paths import normalize_home_path
 
 
 class UserError(Exception):
@@ -30,13 +33,14 @@ class UserManager:
     def _save_users(self, users: dict) -> None:
         self._configuration.set_users(users)
 
-    def add_user(self, username: str, password: str) -> None:
+    def add_user(self, username: str, password: str, home_path: Optional[str] = None) -> None:
         """
         Create a new user with a bcrypt-hashed password.
 
         Args:
             username: Unique login name (letters, digits, underscores only).
             password: Plain-text password (minimum 8 characters).
+            home_path: Optional virtual home root for this user.
 
         Raises:
             UserError: If the username already exists, is invalid, or the
@@ -62,6 +66,18 @@ class UserManager:
             "password_hash": password_hash,
             "enabled": True,
         }
+        if home_path is not None:
+            normalized = normalize_home_path(home_path)
+            users[username]["home_path"] = normalized
+            # Create the home directory immediately inside the storage root.
+            home_real = (
+                Path(self._configuration.storage_path) / normalized.lstrip("/")
+            )
+            try:
+                home_real.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                # Skip permission errors - directory may be created later or by system
+                pass
         self._save_users(users)
 
     def remove_user(self, username: str) -> None:
@@ -150,9 +166,18 @@ class UserManager:
             A list of dicts with keys 'username' and 'enabled'.
         """
         return [
-            {"username": name, "enabled": record.get("enabled", True)}
+            {
+                "username": name,
+                "enabled": record.get("enabled", True),
+                "home_path": record.get("home_path"),
+            }
             for name, record in self._get_users().items()
         ]
+
+    def get_home_path(self, username: str) -> Optional[str]:
+        """Return a user's configured home path, or None if not set."""
+        users = self._get_users()
+        return users.get(username, {}).get("home_path")
 
     def generate_temporary_password(self, username: str) -> str:
         """

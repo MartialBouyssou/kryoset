@@ -1,3 +1,5 @@
+import signal
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
@@ -8,6 +10,7 @@ from kryoset.core.configuration import Configuration
 from kryoset.core.permission_store import PermissionStore
 from kryoset.core.quota import QuotaManager
 from kryoset.core.totp import TOTPManager
+from kryoset.core.storage_manager import StorageManager
 from kryoset.core.user_manager import UserManager
 
 
@@ -33,7 +36,7 @@ def create_app(
     Returns:
         A fully configured :class:`FastAPI` application.
     """
-    app = FastAPI(title="Kryoset API", version="0.1.0")
+    app = FastAPI(title="Kryoset API", version="1.0.0")
 
     app.state.configuration = configuration
     app.state.user_manager = user_manager
@@ -45,6 +48,24 @@ def create_app(
         if configuration.storage_path.exists()
         else None
     )
+    sm = StorageManager(configuration, user_manager, permission_store)
+    app.state.storage_manager = sm
+    startup_warnings = sm.validate_on_startup()
+    for warning in startup_warnings:
+        import logging
+        logging.getLogger("kryoset").warning(warning)
+
+    def _on_shutdown(*_):
+        from kryoset.api.auth import revoke_all_tokens
+        revoke_all_tokens()
+        if audit_logger:
+            try:
+                audit_logger.log_server_shutdown()
+            except Exception:
+                pass
+
+    signal.signal(signal.SIGTERM, _on_shutdown)
+    signal.signal(signal.SIGINT, _on_shutdown)
 
     app.add_middleware(
         CORSMiddleware,
@@ -54,12 +75,7 @@ def create_app(
         allow_headers=["*"],
     )
 
-    @app.get("/health", tags=["health"])
-    def health() -> dict:
-        """Return server health status. No authentication required."""
-        return {"status": "ok"}
-
-    from kryoset.api.routes import auth, files, logs, permissions, shares, users, web
+    from kryoset.api.routes import auth, files, logs, permissions, shares, storage, users, web
 
     app.include_router(web.router)
     app.include_router(auth.router)
@@ -68,5 +84,11 @@ def create_app(
     app.include_router(permissions.router)
     app.include_router(shares.router)
     app.include_router(logs.router)
+    app.include_router(storage.router)
+
+    @app.get("/health", tags=["health"])
+    def health() -> dict:
+        """Return server health status. No authentication required."""
+        return {"status": "ok"}
 
     return app

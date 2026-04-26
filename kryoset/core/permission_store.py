@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Generator, Optional
 
 import bcrypt
+from kryoset.core.home_paths import normalize_home_path
 
 from kryoset.core.permissions import (
     Permission,
@@ -21,6 +22,8 @@ DEFAULT_DB_PATH = Path.home() / ".kryoset" / "permissions.db"
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS groups (
     name        TEXT PRIMARY KEY,
+    home_path   TEXT,
+    home_auto_user_subdir INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -92,6 +95,17 @@ class PermissionStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
+            # Lightweight migration for existing databases created before group-home fields.
+            cols = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(groups)").fetchall()
+            }
+            if "home_path" not in cols:
+                connection.execute("ALTER TABLE groups ADD COLUMN home_path TEXT")
+            if "home_auto_user_subdir" not in cols:
+                connection.execute(
+                    "ALTER TABLE groups ADD COLUMN home_auto_user_subdir INTEGER NOT NULL DEFAULT 0"
+                )
 
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -139,19 +153,33 @@ class PermissionStore:
             created_at=parse_iso(row["created_at"]) if row["created_at"] else None,
         )
 
-    def create_group(self, group_name: str) -> None:
+    def create_group(
+        self,
+        group_name: str,
+        home_path: Optional[str] = None,
+        home_auto_user_subdir: bool = False,
+    ) -> None:
         """
         Create a new empty group.
 
         Args:
             group_name: Unique name for the group.
+            home_path: Optional base home path for members of this group.
+            home_auto_user_subdir: If True, users resolve to ``<home_path>/<username>``.
 
         Raises:
             PermissionStoreError: If the group already exists.
         """
+        normalized_home_path = normalize_home_path(home_path) if home_path else None
+        if home_auto_user_subdir and normalized_home_path is None:
+            raise PermissionStoreError("Group auto home generation requires a base home_path.")
+
         try:
             with self._connect() as conn:
-                conn.execute("INSERT INTO groups (name) VALUES (?)", (group_name,))
+                conn.execute(
+                    "INSERT INTO groups (name, home_path, home_auto_user_subdir) VALUES (?, ?, ?)",
+                    (group_name, normalized_home_path, 1 if home_auto_user_subdir else 0),
+                )
         except sqlite3.IntegrityError:
             raise PermissionStoreError(f"Group '{group_name}' already exists.")
 
@@ -173,7 +201,9 @@ class PermissionStore:
     def list_groups(self) -> list[dict]:
         """Return all groups with their member lists."""
         with self._connect() as conn:
-            groups = conn.execute("SELECT name FROM groups ORDER BY name").fetchall()
+            groups = conn.execute(
+                "SELECT name, home_path, home_auto_user_subdir FROM groups ORDER BY name"
+            ).fetchall()
             result = []
             for group in groups:
                 members = conn.execute(
@@ -183,16 +213,50 @@ class PermissionStore:
                 result.append({
                     "name": group["name"],
                     "members": [m["username"] for m in members],
+                    "home_path": group["home_path"],
+                    "home_auto_user_subdir": bool(group["home_auto_user_subdir"]),
                 })
             return result
 
-    def add_group_member(self, group_name: str, username: str) -> None:
+    def get_user_group_home_paths(self, username: str) -> list[str]:
+        """Return effective group home roots for a user."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT g.home_path, g.home_auto_user_subdir
+                FROM groups g
+                INNER JOIN group_members gm ON gm.group_name = g.name
+                WHERE gm.username = ?
+                """,
+                (username,),
+            ).fetchall()
+
+        homes: list[str] = []
+        for row in rows:
+            home_path = row["home_path"]
+            if not home_path:
+                continue
+            base = normalize_home_path(home_path)
+            if row["home_auto_user_subdir"]:
+                homes.append(normalize_home_path(f"{base.rstrip('/')}/{username}"))
+            else:
+                homes.append(base)
+        return homes
+
+    def add_group_member(
+        self, group_name: str, username: str, storage_path: Optional[Path] = None
+    ) -> None:
         """
         Add a user to a group.
+
+        When the group has ``home_auto_user_subdir`` enabled and *storage_path*
+        is provided, the user's home directory is created on disk immediately.
 
         Args:
             group_name: Target group.
             username: User to add.
+            storage_path: Absolute path to the NAS storage root.  Required for
+                          automatic home directory creation.
 
         Raises:
             PermissionStoreError: If the group does not exist or the user is already a member.
@@ -213,6 +277,28 @@ class PermissionStore:
                 ).fetchall()
                 for row in group_rules:
                     self._upsert_user_rule_from_group(conn, username, self._rule_from_row(row))
+
+                # Create the user home directory on disk if the group uses
+                # automatic per-user subdirectories.
+                if storage_path is not None:
+                    group_row = conn.execute(
+                        "SELECT home_path, home_auto_user_subdir FROM groups WHERE name = ?",
+                        (group_name,),
+                    ).fetchone()
+                    if (
+                        group_row
+                        and group_row["home_path"]
+                        and group_row["home_auto_user_subdir"]
+                    ):
+                        base = normalize_home_path(group_row["home_path"])
+                        user_home = normalize_home_path(f"{base.rstrip('/')}/{username}")
+                        home_real = storage_path / user_home.lstrip("/")
+                        try:
+                            home_real.mkdir(parents=True, exist_ok=True)
+                        except PermissionError:
+                            # Skip permission errors - directory may be created later or by system
+                            pass
+
         except sqlite3.IntegrityError as error:
             if "FOREIGN KEY" in str(error):
                 raise PermissionStoreError(f"Group '{group_name}' does not exist.")

@@ -112,6 +112,49 @@ def test_upload_quota_exceeded(client, user_token, permission_store, user_manage
     assert resp.status_code == 413
 
 
+def test_upload_quota_blocks_cumulative_usage(client, user_token, permission_store, user_manager, config):
+    _grant(permission_store, "alice", "/", Permission.UPLOAD)
+    users = user_manager._get_users()
+    users["alice"]["home_path"] = "/home/alice"
+    users["alice"]["storage_quota_bytes"] = 5_000_000
+    user_manager._save_users(users)
+
+    (config.storage_path / "home").mkdir(exist_ok=True)
+    (config.storage_path / "home" / "alice").mkdir(exist_ok=True)
+    (config.storage_path / "home" / "alice" / "existing.bin").write_bytes(b"x" * 4_900_000)
+
+    resp = client.post(
+        "/files/upload?path=home/alice/too-big.bin",
+        headers=auth_header(user_token),
+        files={"file": ("too-big.bin", b"y" * 200_000, "application/octet-stream")},
+    )
+    assert resp.status_code == 413
+    assert not (config.storage_path / "home" / "alice" / "too-big.bin").exists()
+
+
+def test_upload_quota_blocks_cumulative_usage_on_group_home(client, user_token, permission_store, user_manager, config):
+    _grant(permission_store, "alice", "/", Permission.UPLOAD)
+    permission_store.create_group("team", home_path="/directory", home_auto_user_subdir=True)
+    permission_store.add_group_member("team", "alice")
+
+    users = user_manager._get_users()
+    users["alice"]["storage_quota_bytes"] = 5_000_000
+    users["alice"].pop("home_path", None)
+    user_manager._save_users(users)
+
+    (config.storage_path / "directory").mkdir(exist_ok=True)
+    (config.storage_path / "directory" / "alice").mkdir(exist_ok=True)
+    (config.storage_path / "directory" / "alice" / "existing.bin").write_bytes(b"x" * 4_900_000)
+
+    resp = client.post(
+        "/files/upload?path=directory/alice/too-big.bin",
+        headers=auth_header(user_token),
+        files={"file": ("too-big.bin", b"y" * 200_000, "application/octet-stream")},
+    )
+    assert resp.status_code == 413
+    assert not (config.storage_path / "directory" / "alice" / "too-big.bin").exists()
+
+
 def test_mkdir_admin(client, admin_token):
     resp = client.post(
         "/files/mkdir",
@@ -143,6 +186,34 @@ def test_delete_not_found(client, admin_token):
     assert resp.status_code == 404
 
 
+def test_upload_and_delete_update_persisted_used_cache(
+    client,
+    user_token,
+    permission_store,
+    user_manager,
+    config,
+):
+    _grant(permission_store, "alice", "/", Permission.UPLOAD | Permission.DELETE)
+    users = user_manager._get_users()
+    users["alice"]["home_path"] = "/home/alice"
+    user_manager._save_users(users)
+
+    resp_upload = client.post(
+        "/files/upload?path=home/alice/a.bin",
+        headers=auth_header(user_token),
+        files={"file": ("a.bin", b"1234", "application/octet-stream")},
+    )
+    assert resp_upload.status_code == 201
+    assert config._data.get("user_used_bytes_cache", {}).get("alice:/home/alice") == 4
+
+    resp_delete = client.delete(
+        "/files/delete?path=home/alice/a.bin",
+        headers=auth_header(user_token),
+    )
+    assert resp_delete.status_code == 200
+    assert config._data.get("user_used_bytes_cache", {}).get("alice:/home/alice") == 0
+
+
 def test_rename_file_admin(client, admin_token, config):
     (config.storage_path / "old.txt").write_text("data")
     resp = client.post(
@@ -169,3 +240,39 @@ def test_rename_destination_exists(client, admin_token, config):
 def test_path_traversal_blocked(client, admin_token):
     resp = client.get("/files/download?path=../etc/passwd", headers=auth_header(admin_token))
     assert resp.status_code in (400, 403)
+
+
+def test_user_home_path_restricts_access_outside_home(client, user_manager, user_token, config):
+    user_manager.change_password("alice", "alicepass1")
+    users = user_manager._get_users()
+    users["alice"]["home_path"] = "/home/alice"
+    user_manager._save_users(users)
+
+    (config.storage_path / "home").mkdir(exist_ok=True)
+    (config.storage_path / "home" / "alice").mkdir(exist_ok=True)
+    (config.storage_path / "home" / "alice" / "inside.txt").write_text("ok")
+    (config.storage_path / "outside.txt").write_text("blocked")
+
+    inside = client.get("/files/download?path=home/alice/inside.txt", headers=auth_header(user_token))
+    assert inside.status_code == 200
+
+    outside = client.get("/files/download?path=outside.txt", headers=auth_header(user_token))
+    assert outside.status_code == 403
+
+
+def test_group_auto_home_allows_generated_path(client, permission_store, regular_user, user_token, config):
+    permission_store.create_group("team", home_path="/directory", home_auto_user_subdir=True)
+    permission_store.add_group_member("team", "alice")
+
+    (config.storage_path / "directory").mkdir(exist_ok=True)
+    (config.storage_path / "directory" / "alice").mkdir(exist_ok=True)
+    (config.storage_path / "directory" / "alice" / "data.txt").write_text("ok")
+
+    allowed = client.get(
+        "/files/download?path=directory/alice/data.txt",
+        headers=auth_header(user_token),
+    )
+    assert allowed.status_code == 200
+
+    denied = client.get("/files/download?path=directory/other/data.txt", headers=auth_header(user_token))
+    assert denied.status_code == 403

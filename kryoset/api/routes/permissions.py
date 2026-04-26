@@ -20,7 +20,9 @@ class RuleCreateRequest(BaseModel):
 
 
 class GroupCreateRequest(BaseModel):
-    pass
+    storage_max_bytes: Optional[int] = None
+    home_path: Optional[str] = None
+    auto_generate_user_home: bool = False
 
 
 class MemberRequest(BaseModel):
@@ -222,24 +224,60 @@ def list_groups(
     List all groups and their members. Admin only.
     """
     store = _get_store(request)
-    return store.list_groups()
+    groups = store.list_groups()
+    storage_manager = request.app.state.storage_manager
+    for group in groups:
+        group["storage_max_bytes"] = (
+            storage_manager.get_allocation(f"group:{group['name']}")
+            if storage_manager is not None
+            else None
+        )
+    return groups
 
 
 @router.post("/groups/{name}", status_code=status.HTTP_201_CREATED)
 def create_group(
     name: str,
     request: Request,
+    body: GroupCreateRequest | None = None,
     payload: dict = Depends(require_admin),
 ) -> dict:
     """
     Create a new empty group. Admin only.
     """
     store = _get_store(request)
+    storage_manager = request.app.state.storage_manager
     try:
-        store.create_group(name)
+        store.create_group(
+            name,
+            home_path=body.home_path if body is not None else None,
+            home_auto_user_subdir=(
+                body.auto_generate_user_home if body is not None else False
+            ),
+        )
     except PermissionStoreError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
-    return {"detail": f"Group '{name}' created."}
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    storage_max_bytes = body.storage_max_bytes if body is not None else None
+
+    if storage_manager is not None and storage_max_bytes is not None:
+        from kryoset.core.storage_manager import StorageError
+
+        try:
+            storage_manager.set_allocation(f"group:{name}", storage_max_bytes)
+        except StorageError as error:
+            store.delete_group(name)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    response = {"detail": f"Group '{name}' created."}
+    if storage_max_bytes is not None:
+        response["storage_max_bytes"] = storage_max_bytes
+    if body is not None and body.home_path is not None:
+        response["home_path"] = body.home_path
+        response["auto_generate_user_home"] = body.auto_generate_user_home
+    return response
 
 
 @router.delete("/groups/{name}")
@@ -270,8 +308,9 @@ def add_member(
     Add a user to a group. Admin only.
     """
     store = _get_store(request)
+    storage_path = request.app.state.configuration.storage_path
     try:
-        store.add_group_member(name, body.username)
+        store.add_group_member(name, body.username, storage_path=storage_path)
     except PermissionStoreError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
     return {"detail": f"'{body.username}' added to '{name}'."}

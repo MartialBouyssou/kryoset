@@ -1,3 +1,7 @@
+import gzip
+import re
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
@@ -10,12 +14,15 @@ from kryoset.api.auth import (
     revoke_token,
 )
 from kryoset.api.dependencies import get_current_user
+from kryoset.core.audit_logger import LOG_DIRECTORY
+from kryoset.core.home_paths import resolve_user_home_roots
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _bearer = HTTPBearer(auto_error=False)
 
 _pending_totp: dict[str, str] = {}
+_AUDIT_LINE_RE = re.compile(r"^\[(?P<timestamp>[^\]]+)\]\s+\[(?P<event>[^\]]+)\]\s+(?P<details>.*)$")
 
 
 class LoginRequest(BaseModel):
@@ -34,6 +41,73 @@ class RefreshRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
+
+
+def _parse_audit_details(details: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for token in details.split():
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        fields[key] = value
+    return fields
+
+
+def _read_audit_lines(path):
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return handle.read().splitlines()
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def _collect_auth_activity(log_directory: Path, username: str, limit: int = 5) -> tuple[list[dict], list[dict]]:
+    recent_logins: list[dict] = []
+    recent_failures: list[dict] = []
+
+    if not log_directory.exists():
+        return recent_logins, recent_failures
+
+    audit_paths = sorted(
+        log_directory.glob("kryoset.log*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    for path in audit_paths:
+        try:
+            lines = _read_audit_lines(path)
+        except OSError:
+            continue
+
+        for line in reversed(lines):
+            match = _AUDIT_LINE_RE.match(line)
+            if not match:
+                continue
+            event = match.group("event").strip()
+            if event not in {"AUTH_SUCCESS", "AUTH_FAILURE", "TOTP_SUCCESS", "TOTP_FAILURE"}:
+                continue
+
+            details = _parse_audit_details(match.group("details"))
+            if details.get("user") != username:
+                continue
+
+            entry = {
+                "timestamp": match.group("timestamp"),
+                "event": event,
+                "ip": details.get("ip", "unknown"),
+            }
+
+            if event in {"AUTH_SUCCESS", "TOTP_SUCCESS"}:
+                if len(recent_logins) < limit:
+                    recent_logins.append(entry)
+            else:
+                if len(recent_failures) < limit:
+                    recent_failures.append(entry)
+
+            if len(recent_logins) >= limit and len(recent_failures) >= limit:
+                return recent_logins, recent_failures
+
+    return recent_logins, recent_failures
 
 
 @router.post("/login")
@@ -153,8 +227,68 @@ def logout(
 
 
 @router.get("/me")
-def me(payload: dict = Depends(get_current_user)) -> dict:
+def me(request: Request, payload: dict = Depends(get_current_user)) -> dict:
     """
     Return information about the currently authenticated user.
     """
-    return {"username": payload["sub"], "admin": payload.get("admin", False)}
+    username = payload["sub"]
+    user_manager = request.app.state.user_manager
+    permission_store = request.app.state.permission_store
+    quota_manager = request.app.state.quota_manager
+    storage_manager = request.app.state.storage_manager
+    totp_manager = request.app.state.totp_manager
+    audit_logger = request.app.state.audit_logger
+    log_directory = getattr(audit_logger, "_log_directory", LOG_DIRECTORY) if audit_logger else LOG_DIRECTORY
+    recent_logins, recent_failures = _collect_auth_activity(log_directory, username)
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    initial_path = home_roots[0] if home_roots else "/"
+
+    # Use effective quota (from storage_allocations) if available, otherwise per-user quota
+    quota_bytes = None
+    if storage_manager:
+        quota_bytes = storage_manager.get_effective_quota(username)
+    elif quota_manager:
+        quota_bytes = quota_manager.get_quota(username)
+
+    return {
+        "username": username,
+        "admin": payload.get("admin", False),
+        "totp_enabled": totp_manager.is_enabled(username) if totp_manager else False,
+        "initial_path": initial_path,
+        "quota_bytes": quota_bytes,
+        "used_bytes": quota_manager.get_used_bytes(username, home_path=initial_path) if quota_manager else None,
+        "recent_logins": recent_logins,
+        "recent_failures": recent_failures,
+    }
+
+
+@router.get("/quota")
+def get_quota(request: Request, payload: dict = Depends(get_current_user)) -> dict:
+    """
+    Return current quota info for the authenticated user (for live updates).
+    """
+    username = payload["sub"]
+    user_manager = request.app.state.user_manager
+    permission_store = request.app.state.permission_store
+    quota_manager = request.app.state.quota_manager
+    storage_manager = request.app.state.storage_manager
+    
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    initial_path = home_roots[0] if home_roots else "/"
+
+    # Use effective quota (from storage_allocations) if available, otherwise per-user quota
+    quota_bytes = None
+    if storage_manager:
+        quota_bytes = storage_manager.get_effective_quota(username)
+    elif quota_manager:
+        quota_bytes = quota_manager.get_quota(username)
+
+    # Calculate used bytes from the user's actual home directory
+    used_bytes = None
+    if quota_manager:
+        used_bytes = quota_manager.get_used_bytes(username, home_path=initial_path)
+
+    return {
+        "quota_bytes": quota_bytes,
+        "used_bytes": used_bytes,
+    }
