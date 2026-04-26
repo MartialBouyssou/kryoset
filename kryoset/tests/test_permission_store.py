@@ -20,6 +20,12 @@ class TestGroups:
         groups = store.list_groups()
         assert any(g["name"] == "editors" for g in groups)
 
+    def test_create_group_with_home_settings(self, store):
+        store.create_group("team", home_path="/projects", home_auto_user_subdir=True)
+        groups = {g["name"]: g for g in store.list_groups()}
+        assert groups["team"]["home_path"] == "/projects"
+        assert groups["team"]["home_auto_user_subdir"] is True
+
     def test_duplicate_raises(self, store):
         store.create_group("editors")
         with pytest.raises(PermissionStoreError, match="already exists"):
@@ -59,6 +65,14 @@ class TestGroups:
         store.add_group_member("viewers", "alice")
         groups = store.get_user_groups("alice")
         assert set(groups) == {"editors", "viewers"}
+
+    def test_get_user_group_home_paths_shared_and_auto(self, store):
+        store.create_group("shared", home_path="/shared", home_auto_user_subdir=False)
+        store.create_group("personal", home_path="/home", home_auto_user_subdir=True)
+        store.add_group_member("shared", "alice")
+        store.add_group_member("personal", "alice")
+        homes = set(store.get_user_group_home_paths("alice"))
+        assert homes == {"/shared", "/home/alice"}
 
 
 class TestRules:

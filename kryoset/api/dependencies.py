@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 
 from kryoset.api.auth import decode_token
+from kryoset.core.home_paths import is_within_home, resolve_user_home_roots
 from kryoset.core.permissions import Permission, PRESET_OWNER
 
 _bearer = HTTPBearer(auto_error=False)
@@ -115,14 +116,26 @@ def check_path_permission(
     if user_manager.is_admin(username):
         return
 
+    normalized_path = "/" + path.strip("/")
     permission_store = request.app.state.permission_store
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    if home_roots:
+        if any(is_within_home(normalized_path, root) for root in home_roots):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Access denied for user '{username}' on '{normalized_path}'. "
+                f"Outside configured home path(s): {', '.join(home_roots)}."
+            ),
+        )
+
     if permission_store is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission store not configured.",
         )
 
-    normalized_path = "/" + path.strip("/")
     effective, _ = permission_store.resolve_permissions(username, normalized_path)
     if not (effective & required):
         required_names = required.to_names() or ["NONE"]

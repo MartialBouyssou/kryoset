@@ -96,6 +96,14 @@ def test_list_groups_admin(client, admin_token):
     assert isinstance(resp.json(), list)
 
 
+def test_list_groups_shows_storage_max(client, admin_token, app, permission_store):
+    permission_store.create_group("ops")
+    app.state.storage_manager.set_allocation("group:ops", 9_000_000)
+    resp = client.get("/permissions/groups", headers=auth_header(admin_token))
+    assert resp.status_code == 200
+    assert any(g["name"] == "ops" and g["storage_max_bytes"] == 9_000_000 for g in resp.json())
+
+
 def test_list_groups_requires_admin(client, user_token):
     resp = client.get("/permissions/groups", headers=auth_header(user_token))
     assert resp.status_code == 403
@@ -104,6 +112,38 @@ def test_list_groups_requires_admin(client, user_token):
 def test_create_group_admin(client, admin_token):
     resp = client.post("/permissions/groups/engineers", headers=auth_header(admin_token))
     assert resp.status_code == 201
+
+
+def test_create_group_with_storage_max(client, admin_token, app):
+    resp = client.post(
+        "/permissions/groups/designers",
+        headers=auth_header(admin_token),
+        json={"storage_max_bytes": 7_500_000},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["storage_max_bytes"] == 7_500_000
+    assert app.state.storage_manager.get_allocation("group:designers") == 7_500_000
+
+
+def test_create_group_with_home_settings(client, admin_token):
+    resp = client.post(
+        "/permissions/groups/ops",
+        headers=auth_header(admin_token),
+        json={
+            "home_path": "/directory",
+            "auto_generate_user_home": True,
+        },
+    )
+    assert resp.status_code == 201
+
+    groups = client.get("/permissions/groups", headers=auth_header(admin_token))
+    assert groups.status_code == 200
+    assert any(
+        g["name"] == "ops"
+        and g["home_path"] == "/directory"
+        and g["home_auto_user_subdir"] is True
+        for g in groups.json()
+    )
 
 
 def test_create_group_duplicate(client, admin_token, permission_store):

@@ -19,6 +19,7 @@ Usage examples::
 
 import getpass
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -49,6 +50,73 @@ def _load_config(config_path: str | None = None) -> Configuration:
     return configuration
 
 
+def _parse_quota_size(size: str) -> int | None:
+    """Parse a quota string (e.g. 10GB, 500MB, none) into bytes."""
+    if size.lower() == "none":
+        return None
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)", size.upper())
+    if not match:
+        raise ValueError("Invalid size. Use e.g. 10GB, 500MB or 'none'.")
+    amount = float(match.group(1))
+    unit_map = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+    return int(amount * unit_map[match.group(2)])
+
+
+def _set_user_storage_quota(username: str, size: str, config: str | None) -> None:
+    """Set or remove a per-user storage allocation via StorageManager."""
+    from kryoset.core.quota import QuotaManager
+    from kryoset.core.storage_manager import StorageManager, StorageError
+    from kryoset.core.permission_store import PermissionStore
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+    permission_store = PermissionStore()
+    storage_manager = StorageManager(configuration, user_manager, permission_store)
+
+    try:
+        quota_bytes = _parse_quota_size(size)
+    except ValueError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+    try:
+        quota_manager.set_quota(username, quota_bytes)
+        storage_manager.set_allocation(f"user:{username}", quota_bytes)
+        if quota_bytes is None:
+            click.echo(f"[ok] Quota removed for '{username}' (unlimited).")
+        else:
+            click.echo(f"[ok] Quota for '{username}' set to {size}.")
+    except StorageError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
+def _set_global_storage_budget(size: str, config: str | None) -> None:
+    """Set or remove Kryoset's global storage budget."""
+    from kryoset.core.storage_manager import StorageManager, StorageError
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    storage_manager = StorageManager(configuration, user_manager)
+
+    try:
+        max_bytes = _parse_quota_size(size)
+    except ValueError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+    try:
+        storage_manager.set_global_max(max_bytes)
+        if max_bytes is None:
+            click.echo("[ok] Global storage budget removed (unlimited).")
+        else:
+            click.echo(f"[ok] Global storage budget set to {size}.")
+    except StorageError as error:
+        click.echo(f"[error] {error}", err=True)
+        raise SystemExit(1)
+
+
 @click.group()
 @click.version_option(__version__, prog_name="kryoset")
 def cli() -> None:
@@ -59,23 +127,44 @@ def cli() -> None:
 @click.argument("storage_path", type=click.Path(exists=True, file_okay=False))
 @click.option("--port", default=2222, show_default=True, help="SFTP listening port.")
 @click.option(
+    "--max-storage",
+    default=None,
+    help="Global NAS storage cap (e.g. 100GB, 2TB). Omit for unlimited.",
+)
+@click.option(
     "--config",
     default=None,
     help="Custom path for the configuration file.",
 )
-def init(storage_path: str, port: int, config: str | None) -> None:
+def init(storage_path: str, port: int, max_storage: str | None, config: str | None) -> None:
     """
     Initialise a new Kryoset server.
 
     STORAGE_PATH is the directory (disk or partition mount point) whose
     contents will be shared over SFTP.
     """
+    storage_max_bytes: int | None = None
+    if max_storage:
+        try:
+            storage_max_bytes = _parse_quota_size(max_storage)
+        except ValueError as error:
+            click.echo(f"[error] {error}", err=True)
+            raise SystemExit(1)
+
     path = Path(config) if config else None
     configuration = Configuration(path) if path else Configuration()
-    configuration.initialize(storage_path=storage_path, port=port)
+    configuration.initialize(
+        storage_path=storage_path,
+        port=port,
+        storage_max_bytes=storage_max_bytes,
+    )
     click.echo(f"[ok] Configuration created at {configuration.config_path}")
-    click.echo(f"     Storage : {storage_path}")
-    click.echo(f"     Port    : {port}")
+    click.echo(f"     Storage    : {storage_path}")
+    click.echo(f"     Port       : {port}")
+    if storage_max_bytes is not None:
+        click.echo(f"     Max storage: {max_storage}")
+    else:
+        click.echo("     Max storage: unlimited")
     click.echo("Run 'kryoset user add <username>' to create the first user.")
 
 
@@ -220,6 +309,48 @@ def user_change_password(username: str, config: str | None) -> None:
         sys.exit(1)
 
 
+@user.command("set-max-storage")
+@click.argument("username")
+@click.argument("size")
+@click.option("--config", default=None, help="Path to the configuration file.")
+def user_set_max_storage(username: str, size: str, config: str | None) -> None:
+    """Set max storage usage for USERNAME. SIZE: e.g. 10GB, 500MB, none."""
+    _set_user_storage_quota(username, size, config)
+
+
+@cli.group()
+def storage() -> None:
+    """Manage Kryoset's global storage budget."""
+
+
+@storage.command("set-max")
+@click.argument("size")
+@click.option("--config", default=None, help="Path to the configuration file.")
+def storage_set_max(size: str, config: str | None) -> None:
+    """Set Kryoset's total storage budget. SIZE: e.g. 100GB, 1TB, none."""
+    _set_global_storage_budget(size, config)
+
+
+@storage.command("status")
+@click.option("--config", default=None, help="Path to the configuration file.")
+def storage_status(config: str | None) -> None:
+    """Show Kryoset's global storage usage and budget."""
+    from kryoset.core.storage_manager import StorageManager
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    storage_manager = StorageManager(configuration, user_manager)
+    summary = storage_manager.summary()
+    global_max = summary["global_max_bytes"]
+    if global_max is None:
+        budget = "unlimited"
+    else:
+        budget = f"{global_max:,} B"
+    click.echo(
+        f"Used: {summary['used_bytes']:,} B | Budget: {budget} | Free: {summary['free_bytes']:,} B"
+    )
+
+
 @cli.command()
 @click.option("--lines", "-n", default=50, show_default=True, help="Number of lines to show.")
 @click.option("--follow", "-f", is_flag=True, help="Follow the log in real time (like tail -f).")
@@ -324,13 +455,15 @@ def group_list() -> None:
 @group.command("add-member")
 @click.argument("group_name")
 @click.argument("username")
-def group_add_member(group_name: str, username: str) -> None:
+@click.option("--config", default=None, help="Custom path for the configuration file.")
+def group_add_member(group_name: str, username: str, config: str | None) -> None:
     """Add USERNAME to GROUP_NAME."""
     from kryoset.core.permission_store import PermissionStore, PermissionStoreError
+    configuration = _load_config(config)
     store = PermissionStore()
     store.initialize()
     try:
-        store.add_group_member(group_name, username)
+        store.add_group_member(group_name, username, storage_path=configuration.storage_path)
         click.echo(f"[ok] '{username}' added to '{group_name}'.")
     except PermissionStoreError as error:
         click.echo(f"[error] {error}", err=True)
@@ -712,63 +845,55 @@ def user_quota() -> None:
 @click.option("--config", default=None)
 def quota_set(username: str, size: str, config: str | None) -> None:
     """Set storage quota for USERNAME. SIZE: e.g. 10GB, 500MB, none."""
-    import re
-    from kryoset.core.quota import QuotaManager
-    configuration = _load_config(config)
-    user_manager = UserManager(configuration)
-    quota_manager = QuotaManager(user_manager, configuration.storage_path)
-
-    if size.lower() == "none":
-        quota_bytes = None
-    else:
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)", size.upper())
-        if not match:
-            click.echo("[error] Invalid size. Use e.g. 10GB, 500MB or 'none'.", err=True)
-            raise SystemExit(1)
-        amount = float(match.group(1))
-        unit_map = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-        quota_bytes = int(amount * unit_map[match.group(2)])
-
-    try:
-        quota_manager.set_quota(username, quota_bytes)
-        if quota_bytes is None:
-            click.echo(f"[ok] Quota removed for '{username}' (unlimited).")
-        else:
-            click.echo(f"[ok] Quota for '{username}' set to {size}.")
-    except ValueError as error:
-        click.echo(f"[error] {error}", err=True)
-        raise SystemExit(1)
+    _set_user_storage_quota(username, size, config)
 
 
 @user_quota.command("status")
 @click.argument("username")
 @click.option("--config", default=None)
 def quota_status(username: str, config: str | None) -> None:
-    """Show storage quota usage for USERNAME."""
-    from kryoset.core.quota import QuotaManager
+    """Show storage allocation and effective quota for USERNAME."""
+    from kryoset.core.storage_manager import StorageManager
+    from kryoset.core.permission_store import PermissionStore
     configuration = _load_config(config)
     user_manager = UserManager(configuration)
-    quota_manager = QuotaManager(user_manager, configuration.storage_path)
-    click.echo(f"'{username}': {quota_manager.format_quota_summary(username)}")
+    permission_store = PermissionStore()
+    storage_manager = StorageManager(configuration, user_manager, permission_store)
+    effective = storage_manager.get_effective_quota(username)
+    allocation = storage_manager.get_allocation(f"user:{username}")
+    if effective is None:
+        click.echo(f"'{username}': unlimited")
+    else:
+        source = "direct" if allocation is not None else "group"
+        click.echo(f"'{username}': {effective:,} B ({source})")
 
 
 @user_quota.command("list")
 @click.option("--config", default=None)
 def quota_list(config: str | None) -> None:
-    """List storage quotas for all users."""
-    from kryoset.core.quota import QuotaManager
+    """List effective storage allocations for all users."""
+    from kryoset.core.storage_manager import StorageManager
+    from kryoset.core.permission_store import PermissionStore
     configuration = _load_config(config)
     user_manager = UserManager(configuration)
-    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+    permission_store = PermissionStore()
+    storage_manager = StorageManager(configuration, user_manager, permission_store)
     users = user_manager.list_users()
     if not users:
         click.echo("No users.")
         return
-    click.echo(f"{'Username':<20} {'Quota summary'}")
-    click.echo("-" * 55)
+    click.echo(f"{'Username':<20} {'Effective quota'}")
+    click.echo("-" * 45)
     for entry in users:
         name = entry["username"]
-        click.echo(f"{name:<20} {quota_manager.format_quota_summary(name)}")
+        effective = storage_manager.get_effective_quota(name)
+        allocation = storage_manager.get_allocation(f"user:{name}")
+        if effective is None:
+            summary = "unlimited"
+        else:
+            source = "direct" if allocation is not None else "group"
+            summary = f"{effective:,} B ({source})"
+        click.echo(f"{name:<20} {summary}")
 
 
 @cli.command()

@@ -1,4 +1,5 @@
 import os
+from threading import Lock
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,77 @@ class QuotaManager:
     def __init__(self, user_manager, storage_path: Path) -> None:
         self._user_manager = user_manager
         self._storage_path = storage_path
+        self._usage_lock = Lock()
+
+    def _resolve_user_dir(self, username: str, home_path: str = None) -> tuple[Path, str]:
+        """
+        Resolve the physical directory to scan and a stable cache key.
+
+        The cache key includes the effective home path so usage remains
+        coherent when a user's home root changes.
+        """
+        if home_path is None and hasattr(self._user_manager, "get_home_path"):
+            home_path = self._user_manager.get_home_path(username)
+
+        if home_path is not None:
+            from kryoset.core.home_paths import normalize_home_path
+
+            normalized = normalize_home_path(home_path)
+            user_dir = self._storage_path / normalized.lstrip("/")
+            cache_key = f"{username}:{normalized}"
+            return user_dir, cache_key
+
+        user_dir = self._storage_path / username
+        return user_dir, f"{username}:/"
+
+    def _get_usage_cache(self) -> dict[str, int]:
+        configuration = getattr(self._user_manager, "_configuration", None)
+        if configuration is None:
+            return {}
+        raw_cache = configuration._data.get("user_used_bytes_cache", {})
+        if not isinstance(raw_cache, dict):
+            return {}
+        cache: dict[str, int] = {}
+        for key, value in raw_cache.items():
+            try:
+                cache[str(key)] = max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+        return cache
+
+    def _save_usage_cache(self, cache: dict[str, int]) -> None:
+        configuration = getattr(self._user_manager, "_configuration", None)
+        if configuration is None:
+            return
+        configuration._data["user_used_bytes_cache"] = cache
+        configuration.save()
+
+    @staticmethod
+    def _scan_directory_size(user_dir: Path) -> int:
+        if not user_dir.exists():
+            return 0
+
+        total = 0
+        try:
+            for dirpath, _, filenames in os.walk(user_dir):
+                for filename in filenames:
+                    try:
+                        total += os.path.getsize(os.path.join(dirpath, filename))
+                    except OSError:
+                        pass
+        except (OSError, PermissionError):
+            # If we can't scan the directory, return 0
+            pass
+        return total
+
+    @staticmethod
+    def _format_bytes(b: int) -> str:
+        """Convert bytes to human-readable format (B, KB, MB, GB, TB)."""
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if b < 1024 or unit == "TB":
+                return f"{b:.1f} {unit}" if b >= 1024 else f"{int(b)} {unit}"
+            b /= 1024
+        return f"{b:.1f} TB"
 
     def get_quota(self, username: str) -> Optional[int]:
         """
@@ -67,32 +139,62 @@ class QuotaManager:
             users[username]["storage_quota_bytes"] = quota_bytes
         self._user_manager._save_users(users)
 
-    def get_used_bytes(self, username: str) -> int:
+    def get_used_bytes(self, username: str, home_path: str = None, *, force_rescan: bool = False) -> int:
         """
-        Compute how many bytes *username* currently owns in the storage root.
-
-        Ownership is determined by scanning the user's dedicated subdirectory
-        at ``<storage_root>/<username>/`` if it exists, plus any files
-        recorded as uploaded by this user via the permission store quota log.
-        For simplicity, we scan the filesystem for the user's home directory.
+        Compute how many bytes *username* currently owns in their home directory.
 
         Args:
             username: Login name of the user.
+            home_path: Optional explicit home path. If not provided, uses storage_path/username.
+            force_rescan: If True, bypass cache and rescan the filesystem.
 
         Returns:
-            Total bytes used, 0 if the user has no files.
+            Total bytes used, 0 if the user has no files or home doesn't exist.
         """
-        user_dir = self._storage_path / username
-        if not user_dir.exists():
-            return 0
-        total = 0
-        for dirpath, _, filenames in os.walk(user_dir):
-            for filename in filenames:
-                try:
-                    total += os.path.getsize(os.path.join(dirpath, filename))
-                except OSError:
-                    pass
+        user_dir, cache_key = self._resolve_user_dir(username, home_path)
+
+        if not force_rescan:
+            with self._usage_lock:
+                cache = self._get_usage_cache()
+                if cache_key in cache:
+                    return cache[cache_key]
+
+        total = self._scan_directory_size(user_dir)
+        with self._usage_lock:
+            cache = self._get_usage_cache()
+            cache[cache_key] = total
+            self._save_usage_cache(cache)
         return total
+
+    def refresh_used_bytes(self, username: str, home_path: str = None) -> int:
+        """Force a filesystem scan and persist the refreshed usage for the user."""
+        return self.get_used_bytes(username, home_path=home_path, force_rescan=True)
+
+    def update_used_bytes(self, username: str, delta_bytes: int, home_path: str = None) -> int:
+        """
+        Apply an incremental delta to cached usage and persist the result.
+
+        If no cache exists yet, usage is first initialized from a real scan.
+        """
+        user_dir, cache_key = self._resolve_user_dir(username, home_path)
+        with self._usage_lock:
+            cache = self._get_usage_cache()
+            current = cache.get(cache_key)
+            if current is None:
+                current = self._scan_directory_size(user_dir)
+            updated = max(0, current + int(delta_bytes))
+            cache[cache_key] = updated
+            self._save_usage_cache(cache)
+            return updated
+
+    def clear_used_bytes_cache(self, username: str, home_path: str = None) -> None:
+        """Remove a cached usage entry for a user/home pair."""
+        _, cache_key = self._resolve_user_dir(username, home_path)
+        with self._usage_lock:
+            cache = self._get_usage_cache()
+            if cache_key in cache:
+                cache.pop(cache_key, None)
+                self._save_usage_cache(cache)
 
     def check_upload_allowed(
         self, username: str, additional_bytes: int
@@ -122,8 +224,8 @@ class QuotaManager:
             remaining = max(0, quota - used)
             raise QuotaError(
                 f"Upload refused: quota exceeded for '{username}'. "
-                f"Used {used:,} / {quota:,} bytes "
-                f"({remaining:,} bytes remaining)."
+                f"Used {self._format_bytes(used)} / {self._format_bytes(quota)} "
+                f"({self._format_bytes(remaining)} remaining)."
             )
 
     def format_quota_summary(self, username: str) -> str:
@@ -140,14 +242,7 @@ class QuotaManager:
         quota = self.get_quota(username)
         used = self.get_used_bytes(username)
 
-        def human(b: int) -> str:
-            for unit in ("B", "KB", "MB", "GB", "TB"):
-                if b < 1024 or unit == "TB":
-                    return f"{b:.1f} {unit}"
-                b /= 1024
-            return f"{b:.1f} TB"
-
         if quota is None:
-            return f"{human(used)} used / no quota"
+            return f"{self._format_bytes(used)} used / no quota"
         percent = int(used / quota * 100) if quota else 0
-        return f"{human(used)} used / {human(quota)} quota ({percent}%)"
+        return f"{self._format_bytes(used)} used / {self._format_bytes(quota)} quota ({percent}%)"

@@ -239,3 +239,35 @@ class AuditLogger:
             "PERM_DENIED",
             {"user": username, "path": remote_path, "action": action},
         )
+
+    def log_file_download(self, username: str, remote_path: str) -> None:
+        """Record a file download via the REST API."""
+        self._write("FILE_DOWNLOAD", {"user": username, "path": remote_path})
+
+    def log_file_upload(self, username: str, remote_path: str, size_bytes: int) -> None:
+        """Record a file upload via the REST API."""
+        self._write("FILE_UPLOAD", {"user": username, "path": remote_path, "size": str(size_bytes)})
+
+    def log_share_created(self, username: str, path: str, token: str) -> None:
+        """Record a share link creation."""
+        self._write("SHARE_CREATED", {"user": username, "path": path, "token": token[:16] + "..."})
+
+    def log_share_revoked(self, username: str, token: str) -> None:
+        """Record a share link revocation."""
+        self._write("SHARE_REVOKED", {"user": username, "token": token[:16] + "..."})
+
+    def log_share_accessed(self, token: str, remote_ip: str) -> None:
+        """Record a public share link download."""
+        self._write("SHARE_ACCESS", {"token": token[:16] + "...", "ip": remote_ip})
+
+    def log_user_created(self, actor: str, username: str) -> None:
+        """Record a user account creation."""
+        self._write("USER_CREATED", {"actor": actor, "user": username})
+
+    def log_user_deleted(self, actor: str, username: str) -> None:
+        """Record a user account deletion."""
+        self._write("USER_DELETED", {"actor": actor, "user": username})
+
+    def log_server_shutdown(self) -> None:
+        """Record a server shutdown event."""
+        self._write("SERVER_STOP", {"event": "shutdown"})

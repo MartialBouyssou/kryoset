@@ -1,7 +1,7 @@
 import os
 import uuid
+from datetime import timedelta
 from pathlib import Path
-from typing import Optional
 
 from jose import JWTError, jwt
 
@@ -13,6 +13,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 _revoked_jtis: set[str] = set()
+_all_issued_jtis: set[str] = set()
 
 
 def _load_or_create_secret() -> str:
@@ -21,9 +22,6 @@ def _load_or_create_secret() -> str:
 
     The secret file is created with mode 0o600 to prevent other users from
     reading it.
-
-    Returns:
-        The secret key as a hex string.
     """
     SECRET_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
     if SECRET_KEY_PATH.exists():
@@ -48,7 +46,6 @@ def create_access_token(username: str, is_admin: bool) -> str:
     Returns:
         Encoded JWT string.
     """
-    from datetime import timedelta
     jti = str(uuid.uuid4())
     expire = now_utc() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
@@ -58,6 +55,7 @@ def create_access_token(username: str, is_admin: bool) -> str:
         "jti": jti,
         "exp": expire,
     }
+    _all_issued_jtis.add(jti)
     return jwt.encode(payload, _SECRET, algorithm=ALGORITHM)
 
 
@@ -71,7 +69,6 @@ def create_refresh_token(username: str) -> str:
     Returns:
         Encoded JWT string.
     """
-    from datetime import timedelta
     jti = str(uuid.uuid4())
     expire = now_utc() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
@@ -80,6 +77,7 @@ def create_refresh_token(username: str) -> str:
         "jti": jti,
         "exp": expire,
     }
+    _all_issued_jtis.add(jti)
     return jwt.encode(payload, _SECRET, algorithm=ALGORITHM)
 
 
@@ -119,14 +117,20 @@ def revoke_token(token: str) -> None:
         pass
 
 
+def revoke_all_tokens() -> None:
+    """
+    Revoke every token that has been issued since the server started.
+
+    Called on server shutdown to force all clients to re-authenticate.
+    """
+    _revoked_jtis.update(_all_issued_jtis)
+
+
 def is_jti_revoked(jti: str) -> bool:
     """
     Check whether a given JTI has been revoked.
 
     Args:
         jti: The JWT ID to check.
-
-    Returns:
-        True if the JTI is in the revocation set.
     """
     return jti in _revoked_jtis

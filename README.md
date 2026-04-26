@@ -1,42 +1,33 @@
 # Kryoset
 
-> A secure, self-hosted NAS server over SFTP — own your data, control your access.
+Secure self-hosted NAS over SFTP, with a REST API and web UI for day-to-day administration.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-1.0.0-success)](pyproject.toml)
 
----
+## What Kryoset Includes
 
-## Features
+- SFTP server (SSH/Paramiko) compatible with standard clients.
+- User lifecycle management (create/remove/disable/enable/reset password).
+- TOTP two-factor authentication for users and admin hardening.
+- Permission engine based on path rules (user/group, delegation, constraints).
+- Share links with expiration, password protection and download limits.
+- Global storage budget plus per-user/per-group storage allocations.
+- HTTPS REST API and a built-in web dashboard.
+- Audit logging with rotation and retention.
 
-- **SFTP server** — industry-standard encrypted file transfer (SSH under the hood), compatible with any standard SFTP client
-- **User management** — add, remove, enable/disable, promote users via CLI; passwords stored as bcrypt hashes with anti-timing-attack protection
-- **Two-factor authentication (TOTP)** — per-user opt-in via Google Authenticator, Authy or any TOTP app; QR-code provisioning; enforced at SSH level via keyboard-interactive
-- **Granular permissions engine** — 10 combinable permission flags (LIST, DOWNLOAD, UPLOAD, DELETE, SHARE, MANAGE_PERMS, …) assigned to users or groups on any path
-- **Groups and delegation** — create groups, assign members, grant rules at group level, delegate permission management to team leads
-- **Rule constraints** — expiry date, active hours (e.g. weekdays only), IP whitelist/blacklist, optional path password
-- **Share links** — create time-limited token-based links with optional password and download counter
-- **Virtual control channel** — remote users manage their own share links and delegated permissions via `/.kryoset/` inside SFTP (REST-ready design)
-- **Per-user storage quotas** — admins set byte limits per user; admin accounts are always exempt
-- **Audit logging** — Paris-timezone timestamps, daily rotation, gzip compression, configurable retention by age and total size; events include TOTP, quota and permission-denied entries
-- **Anti-traversal protection** — all filesystem operations validated; chroot per session
-- **Cross-platform** — Linux and Windows (Python 3.11+)
+## Current Status
 
-## Roadmap
+Kryoset v1.0.0 already provides:
 
-**Next**
-- [ ] REST API with HTTPS
-- [ ] Web dashboard
-
-**Future**
-- [ ] Prometheus metrics export
-- [ ] iOS / Android client app
-
----
+- SFTP service (`kryoset start`)
+- HTTPS REST API (`kryoset api`)
+- Web app (`/` served by the API)
 
 ## Requirements
 
-- Python 3.11 or later
+- Python 3.11+
 - pip
 
 ## Installation
@@ -47,240 +38,184 @@ cd kryoset
 pip install .
 ```
 
-For development (includes test dependencies):
+Development install:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
----
-
 ## Quick Start
 
-### 1 — Initialize the server
+### 1) Initialize storage
 
 ```bash
+# Basic
 kryoset init /mnt/my_disk
-# Custom port
-kryoset init /mnt/my_disk --port 3333
+
+# With custom SFTP port and global storage cap
+kryoset init /mnt/my_disk --port 3333 --max-storage 1TB
 ```
 
-### 2 — Add users
+### 2) Create users
 
 ```bash
-kryoset user add alice          # prompts for password
+kryoset user add alice
+kryoset user add bob
 kryoset user list
-kryoset user disable alice
-kryoset user enable alice
-kryoset user reset-password alice
-kryoset user set-admin alice    # grant admin role
 ```
 
-### 3 — Set up two-factor authentication (optional, per user)
+### 3) Configure security
 
 ```bash
-# Generate secret and display provisioning URI + QR code instructions
+# TOTP (recommended before admin grant)
 kryoset user totp setup alice
-
-# Scan the URI with your authenticator app, then confirm with a live code
 kryoset user totp confirm alice 123456
 
-# Check status
-kryoset user totp status alice
-
-# Disable if needed
-kryoset user totp disable alice
+# Promote to admin
+kryoset user set-admin alice
 ```
 
-Once confirmed, the next time Alice connects she will be asked for her password **and** her TOTP code:
-
-```
-alice@server's password:
-TOTP code (6 digits):
-```
-
-### 4 — Set storage quotas (admin only)
+### 4) Configure storage limits
 
 ```bash
-kryoset user quota set alice 10GB
-kryoset user quota set bob 500MB
-kryoset user quota set charlie none    # remove quota (unlimited)
+# Global NAS budget
+kryoset storage set-max 1TB
+kryoset storage status
 
-kryoset user quota status alice        # alice: 1.2 GB used / 10.0 GB quota (12%)
-kryoset user quota list                # all users at a glance
+# Per-user effective quota
+kryoset user set-max-storage bob 100GB
+kryoset user quota status bob
 ```
 
-### 5 — Start the server
+### 5) Start services
 
 ```bash
+# SFTP
 kryoset start
+
+# HTTPS API + web UI (in another terminal)
+kryoset api --host 0.0.0.0 --port 8443
 ```
 
-Press `Ctrl-C` to stop.
-
-### 6 — Connect with an SFTP client
+### 6) Connect clients
 
 ```bash
-sftp -P 2222 alice@localhost
+# SFTP
+sftp -P 3333 alice@localhost
 ```
 
-GUI clients (FileZilla, Cyberduck, WinSCP): Protocol = SFTP, Port = 2222.
+Web UI:
 
-### 7 — Add permission rules
+- Open `https://localhost:8443/`
 
-```bash
-# Read-only access for alice on /projects
-kryoset perm add --path /projects --user alice -p LIST -p PREVIEW -p DOWNLOAD
-
-# Full access for the editors group on /shared
-kryoset perm add --path /shared --group editors -p LIST -p DOWNLOAD -p UPLOAD -p RENAME -p MOVE -p DELETE
-
-# Check effective permissions
-kryoset perm check alice /projects
-```
-
----
-
-## CLI Reference
+## Main CLI Commands
 
 ### Server
 
-```
-kryoset init <STORAGE_PATH> [--port PORT] [--config PATH]
+```text
+kryoset init <STORAGE_PATH> [--port PORT] [--max-storage SIZE] [--config PATH]
 kryoset start [--config PATH]
+kryoset api [--host HOST] [--port PORT] [--cert PEM] [--key PEM] [--config PATH]
 ```
 
-### Users
+### Users and TOTP
 
-```
+```text
 kryoset user add <USERNAME>
-kryoset user list
 kryoset user remove <USERNAME>
+kryoset user list
 kryoset user enable <USERNAME>
 kryoset user disable <USERNAME>
 kryoset user change-password <USERNAME>
 kryoset user reset-password <USERNAME>
 kryoset user set-admin <USERNAME> [--revoke]
 
-kryoset user totp setup <USERNAME>          Generate secret + provisioning URI
-kryoset user totp confirm <USERNAME> <CODE> Activate TOTP after scanning QR
-kryoset user totp disable <USERNAME>        Deactivate TOTP
-kryoset user totp status <USERNAME>         Show enabled/disabled
+kryoset user totp setup <USERNAME>
+kryoset user totp confirm <USERNAME> <CODE>
+kryoset user totp disable <USERNAME>
+kryoset user totp status <USERNAME>
+```
 
-kryoset user quota set <USERNAME> <SIZE>    e.g. 10GB, 500MB, none
+### Storage
+
+```text
+kryoset storage set-max <SIZE|none>
+kryoset storage status
+
+kryoset user set-max-storage <USERNAME> <SIZE|none>
+kryoset user quota set <USERNAME> <SIZE|none>
 kryoset user quota status <USERNAME>
 kryoset user quota list
 ```
 
-### Groups
+### Groups and permissions
 
-```
+```text
 kryoset group create <GROUP>
 kryoset group delete <GROUP>
 kryoset group list
 kryoset group add-member <GROUP> <USERNAME>
 kryoset group remove-member <GROUP> <USERNAME>
-```
 
-### Permissions
-
-```
 kryoset perm add --path PATH (--user U | --group G) -p FLAG [-p FLAG ...]
-             [--expires 24h|7d|ISO_DATE]
-             [--password]
-             [--quota 500MB|2GB]
-             [--download-limit N]
-             [--ip-whitelist CIDR[,CIDR]]
-             [--ip-blacklist CIDR[,CIDR]]
-             [--can-delegate]
-             [--hours mon-fri:09-18]
-
 kryoset perm list [--path PREFIX]
 kryoset perm remove <RULE_ID>
 kryoset perm check <USERNAME> <PATH>
 ```
 
-### Share Links
+### Share links and logs
 
-```
-kryoset share create --path PATH --user USERNAME
-              [-p DOWNLOAD] [--expires 24h] [--download-limit N] [--password]
+```text
+kryoset share create --path PATH --user USERNAME [--expires 24h] [--download-limit N] [--password]
 kryoset share list [--user USERNAME]
 kryoset share revoke <TOKEN>
-```
 
-### Logs
-
-```
 kryoset logs [-n LINES] [--follow] [--filter TEXT]
 ```
 
----
+## Data Layout
 
-## Configuration
-
-All state lives in `~/.kryoset/` (all files mode `600`):
-
-```
-~/.kryoset/
-├── config.json        Server config (storage path, port, users + TOTP secrets + quotas)
-├── host_key           SSH host key (generated on first start — back it up)
-├── permissions.db     SQLite: groups, rules, share links, upload usage
-└── logs/
-    ├── kryoset.log    Live audit log (Paris timezone, CEST/CET)
-    └── kryoset.log.YYYY-MM-DD.gz   Rotated + gzip-compressed archives
-```
-
----
-
-## Audit Logging
-
-Events are written with Paris-timezone timestamps (CEST/CET). Rotated files are compressed with gzip. Default retention: 30 days or 500 MB total, whichever is hit first.
-
-```bash
-kryoset logs                        # last 50 lines
-kryoset logs --follow               # live tail
-kryoset logs --filter AUTH_FAILURE  # filter by event type
-kryoset logs -n 200
-```
-
-Event labels: `AUTH_SUCCESS`, `AUTH_FAILURE`, `TOTP_SUCCESS`, `TOTP_FAILURE`, `CONNECT`, `DISCONNECT`, `FILE_READ`, `FILE_WRITE`, `FILE_DELETE`, `FILE_RENAME`, `MKDIR`, `RMDIR`, `QUOTA_EXCEEDED`, `PERM_DENIED`.
-
-Example:
+Kryoset stores runtime state under `~/.kryoset/`:
 
 ```text
-[2026-04-15 09:31:08 CEST] [AUTH_SUCCESS  ] user=alice ip=192.168.1.44
-[2026-04-15 09:31:09 CEST] [TOTP_SUCCESS  ] user=alice ip=192.168.1.44
-[2026-04-15 09:31:12 CEST] [FILE_READ     ] user=alice path=/projects/spec.pdf
+~/.kryoset/
+├── config.json                # core configuration and users
+├── host_key                   # SSH host key
+├── permissions.db             # sqlite (rules/groups/shares)
+└── logs/
+    ├── kryoset.log
+    └── kryoset.log.YYYY-MM-DD.gz
 ```
 
----
+Important `config.json` keys:
 
-## Permissions Guide
+- `storage_path`: NAS root path.
+- `storage_max_bytes`: global NAS cap (`null` or missing = unlimited).
+- `storage_allocations`: per-user/per-group allocations (`user:<name>`, `group:<name>`).
+- `users`: credentials, status, admin flag, optional home path.
 
-See [PERMISSION.md](PERMISSION.md) for the full permission model, resolution algorithm, delegation workflows and control-channel usage.
+## Documentation Map
 
----
+- Permission model and delegation: [PERMISSION.md](PERMISSION.md)
+- REST API reference: [docs/API.md](docs/API.md)
+- Architecture and components: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Operations and security checklist: [docs/OPERATIONS.md](docs/OPERATIONS.md)
 
-## Running Tests
+## Tests
 
 ```bash
-pytest           # all tests
-pytest -v        # verbose
-pytest --cov     # with coverage
+pytest
+pytest -v
+pytest --cov
 ```
-
----
 
 ## Security Notes
 
-- Never expose port 2222 to the internet without a firewall rule. Use VPN or SSH tunnelling.
-- Back up `~/.kryoset/host_key` — clients will warn if it changes.
-- Enable TOTP for all accounts that need remote access.
-- Review `kryoset logs --filter AUTH_FAILURE` regularly.
-
----
+- Do not expose SFTP/API publicly without firewall + reverse proxy + rate limiting.
+- Back up `~/.kryoset/host_key` to avoid host identity drift.
+- Enforce TOTP on all privileged users.
+- Review failed auth events regularly (`AUTH_FAILURE`, `TOTP_FAILURE`).
 
 ## License
 
-[MIT](LICENSE) — © 2026 Kryoset Contributors
+[MIT](LICENSE) - Copyright (c) 2026 Kryoset Contributors

@@ -2,6 +2,7 @@ import pyotp
 import pytest
 from fastapi.testclient import TestClient
 
+from kryoset.core.audit_logger import AuditLogger
 from kryoset.tests.api.conftest import auth_header
 
 
@@ -43,6 +44,39 @@ def test_me_endpoint(client, admin_token):
     data = resp.json()
     assert data["username"] == "admin"
     assert data["admin"] is True
+    assert "totp_enabled" in data
+    assert data["initial_path"] == "/"
+    assert "quota_bytes" in data
+    assert "used_bytes" in data
+    assert "recent_logins" in data
+    assert "recent_failures" in data
+
+
+def test_me_endpoint_returns_user_home_as_initial_path(client, user_token, user_manager):
+    users = user_manager._get_users()
+    users["alice"]["home_path"] = "/home/alice"
+    user_manager._save_users(users)
+
+    resp = client.get("/auth/me", headers=auth_header(user_token))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["username"] == "alice"
+    assert data["initial_path"] == "/home/alice"
+
+
+def test_me_endpoint_includes_recent_auth_activity(client, admin_token, tmp_path):
+    logger = AuditLogger(log_directory=tmp_path / "logs", retention_days=7, max_total_size_mb=None)
+    client.app.state.audit_logger = logger
+    logger.log_auth_success("admin", "127.0.0.1")
+    logger.log_auth_failure("admin", "127.0.0.2")
+
+    resp = client.get("/auth/me", headers=auth_header(admin_token))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["recent_logins"]
+    assert data["recent_logins"][0]["event"] == "AUTH_SUCCESS"
+    assert data["recent_failures"]
+    assert data["recent_failures"][0]["event"] == "AUTH_FAILURE"
 
 
 def test_me_requires_auth(client):

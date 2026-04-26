@@ -6,8 +6,10 @@ from kryoset.tests.api.conftest import auth_header
 def test_list_users_admin(client, admin_token, admin_user):
     resp = client.get("/users/", headers=auth_header(admin_token))
     assert resp.status_code == 200
-    usernames = [u["username"] for u in resp.json()]
+    users = resp.json()
+    usernames = [u["username"] for u in users]
     assert "admin" in usernames
+    assert any(u["username"] == "admin" and u["storage_max_bytes"] is None for u in users)
 
 
 def test_list_users_requires_admin(client, user_token):
@@ -22,6 +24,69 @@ def test_create_user_admin(client, admin_token):
         json={"username": "newuser", "password": "newpass12"},
     )
     assert resp.status_code == 201
+
+
+def test_create_user_admin_assigns_default_home(client, admin_token, app):
+    resp = client.post(
+        "/users/",
+        headers=auth_header(admin_token),
+        json={"username": "newuserhome", "password": "newpass12"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["home_path"] == "/home/newuserhome"
+    assert app.state.user_manager.get_home_path("newuserhome") == "/home/newuserhome"
+
+
+def test_create_user_with_storage_max(client, admin_token, app):
+    resp = client.post(
+        "/users/",
+        headers=auth_header(admin_token),
+        json={
+            "username": "quotauser",
+            "password": "newpass12",
+            "storage_max_bytes": 5_000_000,
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["storage_max_bytes"] == 5_000_000
+    assert app.state.storage_manager.get_allocation("user:quotauser") == 5_000_000
+
+
+def test_create_user_with_home_path(client, admin_token, app):
+    resp = client.post(
+        "/users/",
+        headers=auth_header(admin_token),
+        json={
+            "username": "homeduser",
+            "password": "newpass12",
+            "home_path": "/workspace",
+        },
+    )
+    assert resp.status_code == 201
+    assert app.state.user_manager.get_home_path("homeduser") == "/workspace"
+
+
+def test_create_user_and_add_to_group(client, admin_token, permission_store):
+    permission_store.create_group("devs")
+    resp = client.post(
+        "/users/",
+        headers=auth_header(admin_token),
+        json={
+            "username": "groupeduser",
+            "password": "newpass12",
+            "group_name": "devs",
+        },
+    )
+    assert resp.status_code == 201
+    groups = permission_store.get_user_groups("groupeduser")
+    assert "devs" in groups
+
+
+def test_list_users_shows_storage_max(client, admin_token, app, regular_user):
+    app.state.storage_manager.set_allocation("user:alice", 2_500_000)
+    resp = client.get("/users/", headers=auth_header(admin_token))
+    assert resp.status_code == 200
+    assert any(u["username"] == "alice" and u["storage_max_bytes"] == 2_500_000 for u in resp.json())
 
 
 def test_create_user_duplicate(client, admin_token, admin_user):
