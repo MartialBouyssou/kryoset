@@ -19,6 +19,8 @@ _UPLOAD_LOCKS_GUARD = Lock()
 
 _PREVIEWABLE_MIME = {
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "image/bmp", "image/x-icon", "image/vnd.microsoft.icon", "image/tiff", "image/avif",
+    "image/heic", "image/heif",
     "video/mp4", "video/webm",
     "audio/mpeg", "audio/ogg", "audio/wav",
     "text/plain", "text/markdown", "text/csv",
@@ -27,6 +29,7 @@ _PREVIEWABLE_MIME = {
 
 _PREVIEWABLE_EXT = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+    ".bmp", ".ico", ".tif", ".tiff", ".avif", ".jfif", ".heic", ".heif",
     ".mp4", ".webm",
     ".mp3", ".ogg", ".wav",
     ".txt", ".md", ".csv", ".log", ".json", ".xml", ".py", ".js", ".ts", ".html", ".css",
@@ -197,10 +200,13 @@ def preview_file(
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
 
-    if target.suffix.lower() not in _PREVIEWABLE_EXT:
+    suffix = target.suffix.lower()
+    mime, _ = mimetypes.guess_type(target.name)
+    is_previewable = suffix in _PREVIEWABLE_EXT or (mime in _PREVIEWABLE_MIME if mime else False)
+
+    if not is_previewable:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File type not previewable.")
 
-    mime, _ = mimetypes.guess_type(target.name)
     content = target.read_bytes()
 
     if not mime:
