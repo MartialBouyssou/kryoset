@@ -21,7 +21,7 @@ _PREVIEWABLE_MIME = {
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
     "image/bmp", "image/x-icon", "image/vnd.microsoft.icon", "image/tiff", "image/avif",
     "image/heic", "image/heif",
-    "video/mp4", "video/webm",
+    "video/mp4", "video/webm", "video/quicktime",
     "audio/mpeg", "audio/ogg", "audio/wav",
     "text/plain", "text/markdown", "text/csv",
     "application/pdf",
@@ -30,10 +30,45 @@ _PREVIEWABLE_MIME = {
 _PREVIEWABLE_EXT = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
     ".bmp", ".ico", ".tif", ".tiff", ".avif", ".jfif", ".heic", ".heif",
-    ".mp4", ".webm",
+    ".mp4", ".webm", ".mov",
     ".mp3", ".ogg", ".wav",
     ".txt", ".md", ".csv", ".log", ".json", ".xml", ".py", ".js", ".ts", ".html", ".css",
     ".pdf",
+}
+
+_PREVIEWABLE_MIME_BY_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".avif": "image/avif",
+    ".jfif": "image/jpeg",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".log": "text/plain",
+    ".json": "application/json",
+    ".xml": "application/xml",
+    ".py": "text/plain",
+    ".js": "text/javascript",
+    ".ts": "text/plain",
+    ".html": "text/html",
+    ".css": "text/css",
+    ".pdf": "application/pdf",
 }
 
 
@@ -210,7 +245,7 @@ def preview_file(
     content = target.read_bytes()
 
     if not mime:
-        mime = "application/octet-stream"
+        mime = _PREVIEWABLE_MIME_BY_EXT.get(suffix, "application/octet-stream")
 
     return Response(
         content=content,

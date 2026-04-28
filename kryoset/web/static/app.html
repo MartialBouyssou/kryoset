@@ -155,7 +155,10 @@ tr:hover .row-actions{opacity:1}
 .modal-title{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border)}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
 #preview-modal .modal{width:90vw;max-width:1100px;max-height:95vh}
+#preview-modal.preview-fit .modal{width:fit-content;max-width:calc(100vw - 24px)}
 .preview-area{background:var(--bg);border:1px solid var(--border);padding:8px;min-height:200px;display:flex;align-items:center;justify-content:center;overflow:auto;border-radius:var(--radius)}
+.preview-area.preview-media-mode{display:inline-flex;width:fit-content;min-height:0;max-width:calc(100vw - 24px);margin:0 auto}
+.preview-area.preview-media-mode img,.preview-area.preview-media-mode video{width:auto;height:auto;max-width:calc(100vw - 48px);max-height:calc(100vh - 170px);display:block}
 .preview-area img,.preview-area video,.preview-area audio{max-width:100%;max-height:70vh}
 .preview-area pre{font-family:var(--mono);font-size:11px;color:var(--text2);white-space:pre-wrap;word-break:break-all;text-align:left;width:100%;padding:8px;max-height:70vh;overflow-y:auto}
 .preview-area iframe{width:100%;height:70vh;border:none}
@@ -207,7 +210,7 @@ tr:hover .row-actions{opacity:1}
 <!-- APP -->
 <div id="app" class="hidden">
   <div id="sidebar">
-    <div class="sidebar-logo">kryoset<small>NAS v1.0.1</small></div>
+    <div class="sidebar-logo">kryoset<small>NAS v1.0.2</small></div>
     <div class="sidebar-nav">
       <div class="nav-section">Storage</div>
       <div class="nav-item active" onclick="showPanel('files')" id="nav-files"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>Files</div>
@@ -879,6 +882,9 @@ function renderFiles(entries){
 async function previewFile(path,name){
   document.getElementById('preview-title').textContent=name;
   const area=document.getElementById('preview-area');
+  const modal=document.getElementById('preview-modal');
+  modal.classList.remove('preview-fit');
+  area.classList.remove('preview-media-mode');
   area.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--text2)">Loading…</div>';
   document.getElementById('preview-download-btn').onclick=()=>downloadFile(path);
   openModal('preview-modal');
@@ -889,8 +895,15 @@ async function previewFile(path,name){
   if(!resp.ok){area.innerHTML='<div style="color:var(--danger);font-family:var(--mono);font-size:12px">Cannot preview this file.</div>';return}
   const blob=await resp.blob();const objUrl=URL.createObjectURL(blob);
   const mime=(blob.type||'').toLowerCase();
-  if(mime.startsWith('image/')||['jpg','jpeg','png','gif','webp','svg','bmp','ico','tif','tiff','avif','jfif','heic','heif'].includes(ext))area.innerHTML='<img src="'+objUrl+'" alt="'+name+'">';
-  else if(mime.startsWith('video/')||['mp4','webm'].includes(ext))area.innerHTML='<video controls src="'+objUrl+'" style="max-width:100%;max-height:70vh"></video>';
+  if(mime.startsWith('image/')||['jpg','jpeg','png','gif','webp','svg','bmp','ico','tif','tiff','avif','jfif','heic','heif'].includes(ext)){
+    modal.classList.add('preview-fit');
+    area.classList.add('preview-media-mode');
+    area.innerHTML='<img src="'+objUrl+'" alt="'+name+'">';
+  }else if(mime.startsWith('video/')||['mp4','webm','mov','m4v'].includes(ext)){
+    modal.classList.add('preview-fit');
+    area.classList.add('preview-media-mode');
+    area.innerHTML='<video controls playsinline preload="metadata" src="'+objUrl+'"></video>';
+  }
   else if(mime.startsWith('audio/')||['mp3','ogg','wav'].includes(ext))area.innerHTML='<audio controls src="'+objUrl+'" style="width:100%"></audio>';
   else if(mime==='application/pdf'||ext==='pdf')area.innerHTML='<iframe src="'+objUrl+'" style="width:100%;height:70vh;border:none"></iframe>';
   else{const text=await blob.text();area.innerHTML='<pre>'+text.replace(/</g,'&lt;').substring(0,80000)+'</pre>'}
@@ -1233,7 +1246,18 @@ async function loadLogs(){
 }
 
 function openModal(id){document.getElementById(id).classList.remove('hidden')}
-function closeModal(id){document.getElementById(id).classList.add('hidden')}
+function closeModal(id){
+  const modal=document.getElementById(id);
+  modal.classList.add('hidden');
+  if(id==='preview-modal'){
+    modal.classList.remove('preview-fit');
+    const area=document.getElementById('preview-area');
+    if(area){
+      area.classList.remove('preview-media-mode');
+      area.innerHTML='';
+    }
+  }
+}
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.add('hidden')}));
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape')document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.add('hidden'));
