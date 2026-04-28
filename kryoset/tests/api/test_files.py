@@ -88,6 +88,18 @@ def test_preview_image_admin(client, admin_token, config):
     assert resp.content == image_bytes
 
 
+def test_preview_mov_admin(client, admin_token, config):
+    mov_bytes = b"\x00\x00\x00\x18ftypqt  "
+    (config.storage_path / "clip.MOV").write_bytes(mov_bytes)
+
+    resp = client.get("/files/preview?path=clip.MOV", headers=auth_header(admin_token))
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("video/quicktime")
+    assert "inline" in resp.headers.get("content-disposition", "")
+    assert resp.content == mov_bytes
+
+
 def test_preview_unsupported_type_returns_415(client, admin_token, config):
     (config.storage_path / "archive.zip").write_bytes(b"PK\x03\x04")
 

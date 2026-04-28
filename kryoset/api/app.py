@@ -36,7 +36,7 @@ def create_app(
     Returns:
         A fully configured :class:`FastAPI` application.
     """
-    app = FastAPI(title="Kryoset API", version="1.0.0")
+    app = FastAPI(title="Kryoset API", version="1.0.2")
 
     app.state.configuration = configuration
     app.state.user_manager = user_manager

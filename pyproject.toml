@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kryoset"
-version = "1.0.1"
+version = "1.0.2"
 description = "A secure self-hosted NAS server over SFTP."
 readme = "README.md"
 license = { file = "LICENSE" }
