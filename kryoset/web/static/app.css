@@ -449,3 +449,212 @@ body[data-theme="dark"] .badge,body[data-theme="dark"] .tag{border-color:rgba(14
   body[data-theme="dark"] .mobile-nav-item.active{background:linear-gradient(135deg,#eef4ff,#8ea2ff);color:#071122}
   body[data-theme="dark"] .mobile-upload{color:#c8d2ff}
 }
+
+
+/* ==============================
+   Kryoset UI V4 fixes
+   - clean selected rows
+   - no useless UI text selection
+   - safer overflow
+   - better mobile file cards
+   ============================== */
+*,*::before,*::after{box-sizing:border-box}
+
+body,
+#app,
+#sidebar,
+.sidebar-section,
+.nav-link,
+.files-command,
+.drive-bar,
+.files-toolbar,
+.file-table th,
+.file-table tbody tr,
+.file-icon,
+.row-menu summary,
+.view-toggle,
+.btn,
+.badge,
+#mobile-nav,
+.mobile-nav-item,
+.modal-header,
+.modal-actions{
+  -webkit-user-select:none;
+  user-select:none;
+}
+
+input,textarea,select,pre,code,.preview-area,.share-url,.public-url,.privacy-content{
+  -webkit-user-select:text;
+  user-select:text;
+}
+
+#main,.panel,#content-wrapper,.files-content,.files-primary,#file-list-view,.file-table{
+  min-width:0;
+  max-width:100%;
+}
+
+#main{overflow:hidden}
+.files-content{overflow-x:hidden}
+.files-primary{overflow:visible!important}
+#file-list-view{overflow:visible}
+.file-table{table-layout:fixed}
+.file-table th:nth-child(1){width:auto}
+.file-table th:nth-child(2){width:130px}
+.file-table th:nth-child(3){width:180px}
+.file-table th:nth-child(4){width:72px}
+.file-table td{min-width:0;overflow:visible}
+.file-table td:first-child{overflow:hidden}
+.file-name-cell{min-width:0;max-width:100%;overflow:hidden}
+.file-name-text{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-actions,.table-actions{min-width:0}
+
+/* Une seule barre d'accent : à gauche du nom, jamais entre les colonnes. */
+.file-table tbody tr.is-selected td,
+body[data-theme="dark"] .file-table tbody tr.is-selected td{
+  box-shadow:none!important;
+}
+.file-table tbody tr.is-selected td:first-child{
+  box-shadow:inset 3px 0 0 #425cff!important;
+}
+body[data-theme="dark"] .file-table tbody tr.is-selected td:first-child{
+  box-shadow:inset 3px 0 0 #8ea2ff!important;
+}
+
+/* Breadcrumb plus Drive/GitHub : sobre, pas gros chemin technique. */
+.breadcrumb{gap:2px;flex-wrap:nowrap}
+.breadcrumb-home,
+.breadcrumb-part,
+.breadcrumb-current{
+  height:32px;
+  border:1px solid transparent;
+  box-shadow:none!important;
+}
+.breadcrumb-home{
+  background:transparent;
+  color:var(--text2);
+}
+.breadcrumb-home:hover,
+.breadcrumb-part:hover{
+  background:var(--surface2);
+  border-color:var(--border);
+  color:var(--primary2);
+}
+.breadcrumb-current{
+  background:var(--surface2);
+  border-color:var(--border);
+  color:var(--text);
+}
+body[data-theme="dark"] .breadcrumb-home{background:transparent;color:#9ca8c2}
+body[data-theme="dark"] .breadcrumb-home:hover,
+body[data-theme="dark"] .breadcrumb-part:hover{background:rgba(142,162,255,.10);border-color:rgba(142,162,255,.18);color:#d8e0ff}
+body[data-theme="dark"] .breadcrumb-current{background:rgba(142,162,255,.12);border-color:rgba(142,162,255,.20);color:#f3f7ff}
+
+/* Le conteneur des anciennes flèches est retiré du HTML ; sécurité si cache navigateur. */
+.drive-nav-buttons{display:none!important}
+
+.row-menu-popover{max-width:min(240px,calc(100vw - 32px));overflow:hidden}
+.row-menu-popover button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media (max-width:860px){
+  body{overflow-x:hidden}
+  #main{overflow:auto}
+  .files-command{padding:16px 14px 10px!important}
+  .files-titleblock p{max-width:31rem}
+  .files-actions{grid-template-columns:1fr repeat(3,42px)!important;align-items:center}
+  .files-actions .file-search-wrap{grid-column:1/-1!important}
+  .drive-bar{padding:10px 12px!important;gap:10px!important}
+  .breadcrumb{width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .breadcrumb::-webkit-scrollbar{display:none}
+  .breadcrumb-home,.breadcrumb-part,.breadcrumb-current{height:30px;max-width:150px;padding:0 9px;font-size:12px;flex:0 0 auto}
+  .drive-bar-actions{display:grid!important;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:8px;width:100%}
+  .view-toggle{width:auto;flex:0 0 auto}
+  .sort-select{min-width:0;width:100%}
+  .files-content{padding:10px 10px 92px!important;overflow:visible}
+  .files-primary{border-radius:18px!important;background:transparent!important;border:0!important;box-shadow:none!important;overflow:visible!important}
+  .files-toolbar{display:none!important}
+  #file-list-view{overflow:visible!important}
+  .file-table{display:block!important;width:100%!important;margin:0!important;border-collapse:separate!important;border-spacing:0!important;table-layout:auto!important}
+  .file-table thead{display:none!important}
+  .file-table tbody{display:grid!important;gap:10px;width:100%}
+  .file-table tbody tr{
+    position:relative;
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) 38px;
+    grid-template-rows:auto auto auto;
+    column-gap:10px;
+    min-width:0;
+    margin:0!important;
+    padding:12px 12px 12px 12px;
+    border:1px solid #e4eaf3!important;
+    border-radius:18px!important;
+    background:#fff!important;
+    box-shadow:0 10px 28px rgba(15,23,42,.06);
+    overflow:visible!important;
+  }
+  .file-table tbody tr:hover{border-color:#cfd8ff!important;background:#fff!important}
+  .file-table tbody tr.is-selected{border-color:#c8d2ff!important;background:#fbfcff!important}
+  .file-table tbody tr.is-selected::before{
+    content:"";
+    position:absolute;
+    left:0;
+    top:12px;
+    bottom:12px;
+    width:3px;
+    border-radius:0 999px 999px 0;
+    background:#425cff;
+  }
+  .file-table tbody tr td,
+  .file-table tbody tr.is-selected td,
+  body[data-theme="dark"] .file-table tbody tr.is-selected td{
+    display:block!important;
+    width:auto!important;
+    min-width:0;
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .file-table tbody tr td:first-child{grid-column:1;grid-row:1;overflow:hidden!important}
+  .file-table tbody tr td:nth-child(2){grid-column:1;grid-row:2;margin-left:48px;margin-top:4px}
+  .file-table tbody tr td:nth-child(3){grid-column:1;grid-row:3;margin-left:48px;margin-top:3px}
+  .file-table tbody tr td:last-child{grid-column:2;grid-row:1 / span 3;justify-self:end;align-self:start;overflow:visible!important}
+  .file-name-cell{gap:10px;font-size:14px;line-height:1.2;font-weight:850;cursor:pointer}
+  .file-icon{width:38px;height:38px;border-radius:13px;flex:0 0 38px}
+  .file-size,.file-date{font-family:var(--sans);font-size:12px;line-height:1.25;color:#758197;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file-size::before{content:"Taille · ";color:#9aa5b8;font-weight:800}
+  .file-date::before{content:"Modifié · ";color:#9aa5b8;font-weight:800}
+  .row-menu{position:static!important}
+  .row-menu summary{width:34px;height:34px;border-radius:12px;background:#f3f6fb;color:#6b768b}
+  .row-menu-popover{
+    position:absolute!important;
+    right:8px!important;
+    top:46px!important;
+    bottom:auto!important;
+    z-index:80;
+    min-width:210px;
+    border-radius:16px;
+  }
+  body[data-theme="dark"] .file-table tbody tr{background:rgba(15,23,42,.94)!important;border-color:rgba(148,163,184,.18)!important;box-shadow:0 14px 36px rgba(0,0,0,.25)}
+  body[data-theme="dark"] .file-table tbody tr:hover{border-color:rgba(142,162,255,.32)!important;background:rgba(18,27,50,.98)!important}
+  body[data-theme="dark"] .file-table tbody tr.is-selected{border-color:rgba(142,162,255,.46)!important;background:rgba(18,27,50,.98)!important}
+  body[data-theme="dark"] .file-table tbody tr.is-selected::before{background:#8ea2ff}
+  body[data-theme="dark"] .file-size,
+  body[data-theme="dark"] .file-date{color:#9aa8c4}
+  body[data-theme="dark"] .file-size::before,
+  body[data-theme="dark"] .file-date::before{color:#6d7b98}
+  body[data-theme="dark"] .row-menu summary{background:rgba(142,162,255,.10);color:#b9c5df}
+}
+
+@media (max-width:520px){
+  .files-actions{grid-template-columns:1fr repeat(3,40px)!important}
+  .files-titleblock h1{font-size:22px!important}
+  .files-titleblock p{font-size:12px!important}
+  .drive-bar-actions{grid-template-columns:1fr auto;grid-template-areas:"view sort" "hidden hidden"}
+  .view-toggle{grid-area:view}
+  .sort-select{grid-area:sort;max-width:150px}
+  .checkbox-label-small{grid-area:hidden;display:flex!important;width:max-content}
+  .file-table tbody tr{border-radius:16px!important;padding:11px}
+  .file-table tbody tr td:nth-child(2),.file-table tbody tr td:nth-child(3){margin-left:48px}
+  .row-menu-popover{left:auto!important;right:6px!important;min-width:200px}
+}

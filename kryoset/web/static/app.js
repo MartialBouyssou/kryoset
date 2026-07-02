@@ -245,7 +245,7 @@ function buildBreadcrumb(){
   const pd=document.getElementById('path-display');
   const parts=currentPath?currentPath.split('/').filter(Boolean):[];
   if(pd){
-    pd.textContent='Emplacement : /'+(currentPath||'');
+    pd.textContent='/' + (currentPath || '');
     pd.title='/'+(currentPath||'');
   }
   let html='<span class="breadcrumb-home" data-action="navigateTo" data-path=""><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg> Accueil</span>';
