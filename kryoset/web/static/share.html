@@ -4,14 +4,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Kryoset — Shared file</title>
+<title>Kryoset — Fichier partagé</title>
 <link href="/static/share.css" rel="stylesheet"/>
 </head>
 <body>
 <div class="card">
-<div class="logo"><span>kryoset</span>.nas — shared file</div>
+<div class="logo"><span>kryoset</span><small>Fichier partagé sécurisé</small></div>
 <div class="share-loading" id="loading">
-    Loading…
+    Chargement…
   </div>
 <div class="hidden" id="valid-state">
 <span class="file-icon" id="file-icon"><svg fill="none" height="40" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewbox="0 0 24 24" width="40" xmlns="http://www.w3.org/2000/svg"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg></span>
@@ -19,12 +19,12 @@
 <div class="meta" id="file-meta"></div>
 <div class="hidden" id="pwd-section">
 <div class="field">
-<label>Password required</label>
-<input id="pwd-input" placeholder="Enter link password" type="password"/>
+<label>Mot de passe requis</label>
+<input id="pwd-input" placeholder="Saisir le mot de passe" type="password"/>
 </div>
 </div>
 <button class="btn btn-primary" data-action="download" id="dl-btn">
-      ↓ Download
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Télécharger le fichier
     </button>
 <div id="dl-msg"></div>
 </div>
@@ -36,7 +36,7 @@
 </div>
 </div>
 <footer>
-<a href="/">← Back to Kryoset</a> · <a href="/privacy">Confidentialité</a>
+<a href="/">Retour à Kryoset</a> · <a href="/privacy">Confidentialité</a>
 </footer>
 <script defer="" src="/static/share.js"></script>
 </body>

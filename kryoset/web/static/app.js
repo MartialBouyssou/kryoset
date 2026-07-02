@@ -86,9 +86,9 @@ async function doLogin(){
     if(data.totp_required){window._pendingTotpUser=username;window._pendingTotpToken=data.totp_token;hide(document.getElementById('login-form'));show(document.getElementById('totp-form'));document.getElementById('totp-code').focus();return}
     await finishLogin();
   }catch(error){
-    showLoginError(error?.message||'Connection failed.');
+    showLoginError(error?.message||'Connexion impossible.');
   }finally{
-    btn.disabled=false;btn.textContent='Connect';
+    btn.disabled=false;btn.textContent='Se connecter';
   }
 }
 
@@ -102,7 +102,7 @@ async function doTOTP(){
     if(!resp.ok){const el=document.getElementById('totp-error');el.textContent=data.detail||'Invalid code';show(el);return}
     await finishLogin();
   }catch(error){
-    const el=document.getElementById('totp-error');el.textContent=error?.message||'Connection failed.';show(el);
+    const el=document.getElementById('totp-error');el.textContent=error?.message||'Connexion impossible.';show(el);
   }finally{
     btn.disabled=false;
   }
@@ -146,7 +146,7 @@ async function updateSidebarQuota(){
   const quota=currentUser.quota_bytes;
   const used=currentUser.used_bytes;
   if(used===null||used===undefined){
-    text.textContent='Usage not calculated / '+humanBytes(quota);
+    text.textContent='Utilisation non calculée / '+humanBytes(quota);
     setPercent(fill,0);
   }else{
     const ratio=quota>0?Math.min(100,Math.round(used/quota*100)):0;
@@ -182,6 +182,7 @@ function showPanel(name){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const p=document.getElementById('panel-'+name);if(p)p.classList.add('active');
   const n=document.getElementById('nav-'+name);if(n)n.classList.add('active');
+  document.querySelectorAll('.mobile-nav-item[data-panel]').forEach(item=>item.classList.toggle('active',item.dataset.panel===name));
   if(name==='files')reloadFiles();
   if(name==='settings')loadSettings();
   if(name==='shares')loadShares();
@@ -257,7 +258,7 @@ function formatSize(b){if(b===null||b===undefined)return'—';const u=['B','KB',
 function formatDate(ts){if(!ts)return'—';const d=new Date(ts*1000);return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
 
 function humanBytes(bytes){
-  if(bytes===null||bytes===undefined)return'Unlimited';
+  if(bytes===null||bytes===undefined)return'Illimité';
   const units=['B','KB','MB','GB','TB'];
   let value=bytes;
   let unitIndex=0;
@@ -300,12 +301,12 @@ async function updateSettingsStorageCard(){
     const used=globalStatus.used_bytes||0;
     const globalMax=globalStatus.global_max_bytes;
     if(globalMax===null||globalMax===undefined){
-      quotaSummary.textContent='Kryoset used: '+humanBytes(used)+' / Unlimited';
+      quotaSummary.textContent='Utilisé par Kryoset : '+humanBytes(used)+' / Illimité';
       quotaDetail.textContent='No global budget configured for Kryoset.';
       setPercent(quotaFill,0);
     }else{
       const ratio=globalMax>0?Math.min(100,Math.round(used/globalMax*100)):0;
-      quotaSummary.textContent='Kryoset used: '+humanBytes(used)+' / '+humanBytes(globalMax);
+      quotaSummary.textContent='Utilisé par Kryoset : '+humanBytes(used)+' / '+humanBytes(globalMax);
       quotaDetail.textContent=ratio+'% of global Kryoset budget used';
       setPercent(quotaFill,ratio);
     }
@@ -316,11 +317,11 @@ async function updateSettingsStorageCard(){
   const quota=currentUser?.quota_bytes;
   const used=currentUser?.used_bytes;
   if(quota===null||quota===undefined){
-    quotaSummary.textContent=(used===null||used===undefined?'Usage not calculated':'Used: '+humanBytes(used))+' / Unlimited';
+    quotaSummary.textContent=(used===null||used===undefined?'Utilisation non calculée':'Utilisé : '+humanBytes(used))+' / Illimité';
     quotaDetail.textContent='No storage limit configured for this account.';
     setPercent(quotaFill,0);
   }else if(used===null||used===undefined){
-    quotaSummary.textContent='Usage not calculated / '+humanBytes(quota);
+    quotaSummary.textContent='Utilisation non calculée / '+humanBytes(quota);
     quotaDetail.textContent='Open storage settings or upload/delete a file to refresh the cached usage.';
     setPercent(quotaFill,0);
   }else{
@@ -334,16 +335,16 @@ async function updateSettingsStorageCard(){
 
 async function loadSettings(){
   const resp=await api('GET','/auth/me');
-  if(!resp.ok){toast('Cannot load settings','error');return}
+  if(!resp.ok){toast('Impossible de charger les paramètres','error');return}
   currentUser=await resp.json();
   document.getElementById('settings-username').textContent=currentUser.username;
   document.getElementById('settings-role').textContent=currentUser.admin?'admin':'user';
-  document.getElementById('settings-totp-status').textContent=currentUser.totp_enabled?'Enabled':'Disabled';
+  document.getElementById('settings-totp-status').textContent=currentUser.totp_enabled?'Activée':'Désactivée';
   document.getElementById('settings-last-refresh').textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   await updateSettingsStorageCard();
   await updateSidebarQuota();
-  renderActivity('settings-logins','settings-logins-empty',currentUser.recent_logins||[],'Login');
-  renderActivity('settings-failures','settings-failures-empty',currentUser.recent_failures||[],'Failure');
+  renderActivity('settings-logins','settings-logins-empty',currentUser.recent_logins||[],'Connexion');
+  renderActivity('settings-failures','settings-failures-empty',currentUser.recent_failures||[],'Échec');
 }
 
 async function doChangeMyPassword(){
@@ -351,10 +352,10 @@ async function doChangeMyPassword(){
   const confirmPassword=document.getElementById('settings-new-password-confirm').value;
   const msg=document.getElementById('settings-password-msg');
   hide(msg);
-  if(!password||!confirmPassword){msg.textContent='Enter the new password twice.';show(msg);return}
-  if(password!==confirmPassword){msg.textContent='Passwords do not match.';show(msg);return}
+  if(!password||!confirmPassword){msg.textContent='Saisissez le nouveau mot de passe deux fois.';show(msg);return}
+  if(password!==confirmPassword){msg.textContent='Les mots de passe ne correspondent pas.';show(msg);return}
   const resp=await api('POST','/users/'+currentUser.username+'/password',{new_password:password});
-  if(resp.ok){toast('Password updated','success');document.getElementById('settings-new-password').value='';document.getElementById('settings-new-password-confirm').value=''}
+  if(resp.ok){toast('Mot de passe mis à jour','success');document.getElementById('settings-new-password').value='';document.getElementById('settings-new-password-confirm').value=''}
   else{const d=await resp.json();msg.textContent=d.detail||'Password update failed.';show(msg)}
 }
 
@@ -366,10 +367,50 @@ async function reloadFiles(){
   const showHidden=document.getElementById('show-hidden')?.checked||false;
   const sort=document.getElementById('sort-select')?.value||sortBy;sortBy=sort;
   const resp=await api('GET','/files/list?path='+encodeURIComponent(currentPath)+'&show_hidden='+showHidden+'&sort_by='+sort+'&sort_desc='+sortDesc);
-  if(!resp.ok){const d=await resp.json().catch(()=>({}));toast(d.detail||'Cannot list directory','error');return}
+  if(!resp.ok){const d=await resp.json().catch(()=>({}));toast(d.detail||'Impossible de lister le dossier','error');return}
   const data=await resp.json();renderFiles(data.entries||[]);
 }
 
+
+
+const ICON_DOWNLOAD='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>';
+const ICON_SHARE='<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4"/><path d="M8.6 13.5l6.8 4"/></svg>';
+const ICON_EDIT='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICON_TRASH='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+const ICON_EYE='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const ICON_FOLDER_OPEN='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 17l2-7h14l-2 9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2"/></svg>';
+
+function renderFileDetails(entry,path){
+  const panel=document.getElementById('file-detail-panel');
+  if(!panel)return;
+  if(!entry||entry.isParent){
+    panel.innerHTML='<div class="detail-empty"><span class="detail-orb"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span><strong>Aucun fichier sélectionné</strong><p>Sélectionnez une ligne pour voir les détails, les actions et les informations de partage.</p></div>';
+    return;
+  }
+  const isDir=entry.type==='directory';
+  const safePath=escapeHtml(path||entry.name);
+  const attrPath=escapeAttr(path||entry.name);
+  const attrName=escapeAttr(entry.name||'');
+  const meta=isDir?'Dossier':'Fichier · '+formatSize(entry.size);
+  const actions=(isDir?
+    '<button class="btn btn-primary btn-wide" data-action="navigateTo" data-path="'+attrPath+'">'+ICON_FOLDER_OPEN+' Ouvrir le dossier</button>':
+    (entry.previewable?'<button class="btn btn-primary btn-wide" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'">'+ICON_EYE+' Aperçu</button>':'')+
+    '<button class="btn btn-ghost" data-action="downloadFile" data-path="'+attrPath+'">'+ICON_DOWNLOAD+' Télécharger</button>'+ 
+    '<button class="btn btn-ghost" data-action="promptShare" data-path="'+attrPath+'">'+ICON_SHARE+' Partager</button>')+
+    '<button class="btn btn-ghost" data-action="promptRename" data-path="'+attrPath+'">'+ICON_EDIT+' Renommer</button>'+ 
+    '<button class="btn btn-danger" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'">'+ICON_TRASH+' Supprimer</button>';
+  panel.innerHTML='<div class="file-detail-content">'+
+    '<div class="detail-file-icon">'+getFileIcon(entry)+'</div>'+ 
+    '<div class="detail-file-name">'+escapeHtml(entry.name||'—')+'</div>'+ 
+    '<div class="detail-file-meta">'+escapeHtml(meta)+'</div>'+ 
+    '<div class="detail-tabs"><span>Détails</span><span>Partage</span><span>Activité</span></div>'+ 
+    '<div class="detail-row"><span>Type</span><span>'+(isDir?'Dossier':'Fichier')+'</span></div>'+ 
+    '<div class="detail-row"><span>Chemin</span><span>'+safePath+'</span></div>'+ 
+    '<div class="detail-row"><span>Taille</span><span>'+formatSize(entry.size)+'</span></div>'+ 
+    '<div class="detail-row"><span>Modifié</span><span>'+formatDate(entry.modified)+'</span></div>'+ 
+    '<div class="detail-actions">'+actions+'</div>'+ 
+    '</div>';
+}
 
 function renderFiles(entries){
   const empty=document.getElementById('files-empty');
@@ -377,8 +418,15 @@ function renderFiles(entries){
   const grid=document.getElementById('file-grid');
   const parentRow=currentPath?[{name:'..',type:'directory',size:null,modified:null,previewable:false,isParent:true}]:[];
   const all=[...parentRow,...entries];
-  setVisible(empty, entries.length===0&&!currentPath);
+  setVisible(empty, entries.length===0);
   tbody.innerHTML='';grid.innerHTML='';
+  const firstSelectable=entries[0];
+  if(firstSelectable){
+    const firstPath=currentPath?currentPath+'/'+firstSelectable.name:firstSelectable.name;
+    renderFileDetails(firstSelectable, firstPath);
+  }else{
+    renderFileDetails(null,'');
+  }
   for(const entry of all){
     const entryPath=entry.isParent?(currentPath.includes('/')?currentPath.substring(0,currentPath.lastIndexOf('/')):''):(currentPath?currentPath+'/'+entry.name:entry.name);
     const attrPath=escapeAttr(entryPath);
@@ -389,17 +437,18 @@ function renderFiles(entries){
 
     const tr=document.createElement('tr');
     tr.innerHTML=
-      '<td><div class="file-name-cell" '+primaryAttrs+'><span class="file-icon">'+icon+'</span>'+
-      '<span class="file-name-text">'+escapeHtml(entry.name)+'</span></div></td>'+
-      '<td class="file-size">'+formatSize(entry.size)+'</td>'+
-      '<td class="file-date">'+formatDate(entry.modified)+'</td>'+
+      '<td><div class="file-name-cell" '+primaryAttrs+'><span class="file-icon">'+icon+'</span>'+ 
+      '<span class="file-name-text">'+escapeHtml(entry.name)+'</span></div></td>'+ 
+      '<td class="file-size">'+formatSize(entry.size)+'</td>'+ 
+      '<td class="file-date">'+formatDate(entry.modified)+'</td>'+ 
       '<td>'+(entry.isParent?'':'<div class="row-actions">'+
-      ((!isDir&&entry.previewable)?'<button class="btn btn-ghost btn-sm" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'" title="Preview"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>':'')+
-      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="downloadFile" data-path="'+attrPath+'" title="Download">↓</button>':'')+
-      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="promptShare" data-path="'+attrPath+'" title="Share">&#8677;</button>':'')+
-      '<button class="btn btn-ghost btn-sm" data-action="promptRename" data-path="'+attrPath+'" title="Rename">✎</button>'+
-      '<button class="btn btn-danger btn-sm" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'" title="Delete">✕</button>'+
+      ((!isDir&&entry.previewable)?'<button class="btn btn-ghost btn-sm" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'" title="Aperçu">'+ICON_EYE+'</button>':'')+
+      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="downloadFile" data-path="'+attrPath+'" title="Télécharger">'+ICON_DOWNLOAD+'</button>':'')+
+      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="promptShare" data-path="'+attrPath+'" title="Partager">'+ICON_SHARE+'</button>':'')+
+      '<button class="btn btn-ghost btn-sm" data-action="promptRename" data-path="'+attrPath+'" title="Renommer">'+ICON_EDIT+'</button>'+ 
+      '<button class="btn btn-danger btn-sm" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'" title="Supprimer">'+ICON_TRASH+'</button>'+ 
       '</div>')+'</td>';
+    tr.addEventListener('click',()=>{ if(!entry.isParent)renderFileDetails(entry,entryPath); });
     tbody.appendChild(tr);
 
     const div=document.createElement('div');
@@ -407,15 +456,16 @@ function renderFiles(entries){
     div.setAttribute('data-action', primaryAction);
     div.setAttribute('data-path', entryPath);
     if(entry.previewable)div.setAttribute('data-name', entry.name);
+    div.addEventListener('click',()=>{ if(!entry.isParent)renderFileDetails(entry,entryPath); });
     div.innerHTML=
-      '<span class="grid-icon">'+icon+'</span>'+
-      '<div class="grid-name">'+escapeHtml(entry.name)+'</div>'+
-      '<div class="grid-size">'+(!isDir?formatSize(entry.size):'')+'</div>'+
+      '<span class="grid-icon">'+icon+'</span>'+ 
+      '<div class="grid-name">'+escapeHtml(entry.name)+'</div>'+ 
+      '<div class="grid-size">'+(!isDir?formatSize(entry.size):'')+'</div>'+ 
       (entry.isParent?'':'<div class="grid-actions">'+
-      (!isDir&&entry.previewable?'<div class="grid-action-btn" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'" title="Preview"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>':'')+
-      (!isDir?'<div class="grid-action-btn" data-action="downloadFile" data-path="'+attrPath+'" title="Download">↓</div>':'')+
-      '<div class="grid-action-btn" data-action="promptRename" data-path="'+attrPath+'" title="Rename">✎</div>'+
-      '<div class="grid-action-btn" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'" title="Delete">✕</div>'+
+      (!isDir&&entry.previewable?'<div class="grid-action-btn" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'" title="Aperçu">'+ICON_EYE+'</div>':'')+
+      (!isDir?'<div class="grid-action-btn" data-action="downloadFile" data-path="'+attrPath+'" title="Télécharger">'+ICON_DOWNLOAD+'</div>':'')+
+      '<div class="grid-action-btn" data-action="promptRename" data-path="'+attrPath+'" title="Renommer">'+ICON_EDIT+'</div>'+ 
+      '<div class="grid-action-btn" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'" title="Supprimer">'+ICON_TRASH+'</div>'+ 
       '</div>');
     grid.appendChild(div);
   }
@@ -427,7 +477,7 @@ async function previewFile(path,name){
   const modal=document.getElementById('preview-modal');
   modal.classList.remove('preview-fit');
   area.classList.remove('preview-media-mode');
-  area.innerHTML='<div class="preview-message">Loading…</div>';
+  area.innerHTML='<div class="preview-message">Chargement…</div>';
   const previewDownloadBtn=document.getElementById('preview-download-btn');
   previewDownloadBtn.dataset.action='downloadFile';
   previewDownloadBtn.dataset.path=path;
@@ -435,7 +485,7 @@ async function previewFile(path,name){
   const ext=(name.split('.').pop()||'').toLowerCase();
   const url='/files/preview?path='+encodeURIComponent(path);
   const resp=await fetch(url,{credentials:'same-origin'});
-  if(!resp.ok){area.innerHTML='<div class="preview-error">Cannot preview this file.</div>';return}
+  if(!resp.ok){area.innerHTML='<div class="preview-error">Aperçu impossible pour ce fichier.</div>';return}
   const blob=await resp.blob();const objUrl=URL.createObjectURL(blob);
   const mime=(blob.type||'').toLowerCase();
   if(mime.startsWith('image/')||['jpg','jpeg','png','gif','webp','svg','bmp','ico','tif','tiff','avif','jfif','heic','heif'].includes(ext)){
@@ -463,7 +513,7 @@ function showDeleteConfirm(path,isDir){
   pendingDeletePath=path;
   pendingDeleteIsDir=!!isDir;
   const details=document.getElementById('delete-confirm-details');
-  if(details)details.textContent='Delete "'+path+'"?'+(isDir?' This will delete all contents.':'');
+  if(details)details.textContent='Supprimer "'+path+'" ?'+(isDir?' Tout le contenu du dossier sera supprimé.':'');
   openModal('delete-confirm-modal');
 }
 async function doDeleteConfirm(){
@@ -477,7 +527,7 @@ async function doDeleteConfirm(){
 }
 async function deleteEntry(path,isDir){
   const resp=await api('DELETE','/files/delete?path='+encodeURIComponent(path));
-  if(resp.ok){toast('Deleted','success');reloadFiles();refreshQuotaDisplay()}else{const d=await resp.json();toast(d.detail,'error')}
+  if(resp.ok){toast('Supprimé','success');reloadFiles();refreshQuotaDisplay()}else{const d=await resp.json();toast(d.detail,'error')}
 }
 
 async function refreshQuotaDisplay(){
@@ -499,7 +549,7 @@ async function refreshQuotaDisplay(){
   if(container&&text&&fill){
     if(quota){
       if(used===null||used===undefined){
-        text.textContent='Usage not calculated / '+humanBytes(quota);
+        text.textContent='Utilisation non calculée / '+humanBytes(quota);
         setPercent(fill,0);
       }else{
         const ratio=quota>0?Math.min(100,Math.round(used/quota*100)):0;
@@ -516,11 +566,11 @@ async function refreshQuotaDisplay(){
   const quotaFill=document.getElementById('settings-quota-fill');
   if(quotaSummary&&quotaDetail&&quotaFill){
     if(quota===null||quota===undefined){
-      quotaSummary.textContent=(used===null||used===undefined?'Usage not calculated':'Used: '+humanBytes(used))+' / Unlimited';
+      quotaSummary.textContent=(used===null||used===undefined?'Utilisation non calculée':'Utilisé : '+humanBytes(used))+' / Illimité';
       quotaDetail.textContent='No storage limit configured for this account.';
       setPercent(quotaFill,0);
     }else if(used===null||used===undefined){
-      quotaSummary.textContent='Usage not calculated / '+humanBytes(quota);
+      quotaSummary.textContent='Utilisation non calculée / '+humanBytes(quota);
       quotaDetail.textContent='Open storage settings or upload/delete a file to refresh the cached usage.';
       setPercent(quotaFill,0);
     }else{
@@ -538,14 +588,14 @@ async function doRename(){
   const parent=renamingPath.includes('/')?renamingPath.substring(0,renamingPath.lastIndexOf('/')):'';
   const dest=parent?parent+'/'+newName:newName;
   const resp=await api('POST','/files/rename',{source:renamingPath,destination:dest});
-  if(resp.ok){toast('Renamed','success');closeModal('rename-modal');reloadFiles()}else{const d=await resp.json();toast(d.detail,'error')}
+  if(resp.ok){toast('Renommé','success');closeModal('rename-modal');reloadFiles()}else{const d=await resp.json();toast(d.detail,'error')}
 }
 function showMkdirModal(){document.getElementById('mkdir-name').value='';openModal('mkdir-modal')}
 async function doMkdir(){
   const name=document.getElementById('mkdir-name').value.trim();if(!name)return;
   const path=currentPath?currentPath+'/'+name:name;
   const resp=await api('POST','/files/mkdir',{path});
-  if(resp.ok){toast('Folder created','success');closeModal('mkdir-modal');reloadFiles()}else{const d=await resp.json();toast(d.detail,'error')}
+  if(resp.ok){toast('Dossier créé','success');closeModal('mkdir-modal');reloadFiles()}else{const d=await resp.json();toast(d.detail,'error')}
 }
 
 const dropzone=document.getElementById('dropzone');
@@ -560,7 +610,7 @@ function uploadSingleFile(file){
   const path=currentPath?currentPath+'/'+file.name:file.name;
   const itemId='u'+Date.now()+Math.random().toString(36).slice(2);
   const item=document.createElement('div');item.className='upload-item';item.id=itemId;
-  item.innerHTML='<div class="upload-item-name">'+escapeHtml(file.name)+'</div><div class="upload-item-bar"><div class="upload-item-fill pct-0" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div><div class="upload-item-status"><span class="st">Uploading…</span><span>'+formatSize(file.size)+'</span></div>';
+  item.innerHTML='<div class="upload-item-name">'+escapeHtml(file.name)+'</div><div class="upload-item-bar"><div class="upload-item-fill pct-0" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div><div class="upload-item-status"><span class="st">Téléversement…</span><span>'+formatSize(file.size)+'</span></div>';
   tray.appendChild(item);
   const xhr=new XMLHttpRequest();xhr.open('POST','/files/upload?path='+encodeURIComponent(path));
   const csrf=readCookie(CSRF_COOKIE);if(csrf)xhr.setRequestHeader('X-Kryoset-CSRF',csrf);
@@ -587,17 +637,17 @@ async function doCreateShare(){
   if(expiresStr){const m=expiresStr.match(/^(\d+)(h|d)$/);if(m){const ms=parseInt(m[1])*(m[2]==='h'?3600000:86400000);expires_at=new Date(Date.now()+ms).toISOString()}}
   const body={path,permissions:['DOWNLOAD'],...(expires_at&&{expires_at}),...(limit&&{download_limit:parseInt(limit)}),...(password&&{password})};
   const resp=await api('POST','/shares/',body);
-  if(resp.ok){toast('Share link created!','success');closeModal('share-modal');showPanel('shares')}
+  if(resp.ok){toast('Lien de partage créé','success');closeModal('share-modal');showPanel('shares')}
   else{const d=await resp.json();toast(d.detail,'error')}
 }
 async function loadShares(){
-  const resp=await api('GET','/shares/');if(!resp.ok){toast('Cannot load shares','error');return}
+  const resp=await api('GET','/shares/');if(!resp.ok){toast('Impossible de charger les liens','error');return}
   const shares=await resp.json();
   const container=document.getElementById('shares-list');const empty=document.getElementById('shares-empty');
   container.innerHTML='';setVisible(empty, !shares.length);
   for(const share of shares){
     const url=location.origin+'/share/'+share.token;
-    const tag=share.valid?'<span class="tag tag-valid">active</span>':'<span class="tag tag-expired">expired</span>';
+    const tag=share.valid?'<span class="tag tag-valid">actif</span>':'<span class="tag tag-expired">expiré</span>';
     const passTag=share.password_protected?'<span class="tag tag-warn"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>':'';
     const dlInfo=share.download_limit?share.download_count+'/'+share.download_limit+' DL':share.download_count+' DL';
     const expires=share.expires_at?new Date(share.expires_at).toLocaleDateString():'Never';
@@ -607,14 +657,14 @@ async function loadShares(){
     const attrToken=escapeAttr(share.token);
     const attrUrl=escapeAttr(url);
     const div=document.createElement('div');div.className='share-card';
-    div.innerHTML=`<div class="share-header"><div class="share-info"><div class="share-path">${tag}${passTag} ${safePath}</div><div class="share-meta"><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ${escapeHtml(expires)}</span><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${escapeHtml(dlInfo)}</span><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${safeCreator}</span></div></div><button class="btn btn-danger btn-sm" data-action="revokeShare" data-token="${attrToken}">Revoke</button></div><div class="share-url-box"><span class="share-url">${safeUrl}</span><span class="copy-btn" data-action="copyText" data-text="${attrUrl}"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</span></div>`;
+    div.innerHTML=`<div class="share-header"><div class="share-info"><div class="share-path">${tag}${passTag} ${safePath}</div><div class="share-meta"><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ${escapeHtml(expires)}</span><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${escapeHtml(dlInfo)}</span><span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${safeCreator}</span></div></div><button class="btn btn-danger btn-sm" data-action="revokeShare" data-token="${attrToken}">Révoquer</button></div><div class="share-url-box"><span class="share-url">${safeUrl}</span><span class="copy-btn" data-action="copyText" data-text="${attrUrl}"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copier</span></div>`;
     container.appendChild(div);
   }
 }
 async function revokeShare(token){
-  if(!confirm('Revoke this share link?'))return;
+  if(!confirm('Révoquer ce lien de partage ?'))return;
   const resp=await api('DELETE','/shares/'+token);
-  if(resp.ok){toast('Revoked','success');loadShares()}else{const d=await resp.json();toast(d.detail,'error')}
+  if(resp.ok){toast('Lien révoqué','success');loadShares()}else{const d=await resp.json();toast(d.detail,'error')}
 }
 function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('Copied!','success'))}
 
@@ -638,11 +688,11 @@ async function loadUsers(){
   const users=await resp.json();const tbody=document.getElementById('users-list');tbody.innerHTML='';
   for(const u of users){
     const tr=document.createElement('tr');
-    const storageLabel=u.storage_max_bytes===null||u.storage_max_bytes===undefined?'Unlimited':humanBytes(u.storage_max_bytes);
+    const storageLabel=u.storage_max_bytes===null||u.storage_max_bytes===undefined?'Illimité':humanBytes(u.storage_max_bytes);
     const safeUsername=escapeHtml(u.username);
     const attrUsername=escapeAttr(u.username);
     const storageMaxAttr=u.storage_max_bytes===null||u.storage_max_bytes===undefined?'':String(u.storage_max_bytes);
-    tr.innerHTML=`<td class="mono-cell">${safeUsername}</td><td><span class="tag ${u.enabled?'tag-valid':'tag-expired'}">${u.enabled?'active':'disabled'}</span></td><td>${u.admin?'<span class="tag tag-warn">admin</span>':'<span class="muted-mono">user</span>'}</td><td><span class="storage-value">${escapeHtml(storageLabel)}</span></td><td>${u.totp_enabled?'<span class="tag tag-valid">2FA ✓</span>':'<span class="muted-mono">—</span>'}</td><td><div class="table-actions"><button class="btn btn-ghost btn-sm" data-action="showSetUserStorageModal" data-username="${attrUsername}" data-storage-max="${storageMaxAttr}">Storage</button><button class="btn btn-ghost btn-sm" data-action="toggleUser" data-username="${attrUsername}" data-enabled="${String(u.enabled)}">${u.enabled?'Disable':'Enable'}</button>${!u.totp_enabled?`<button class="btn btn-ghost btn-sm" data-action="setupTOTP" data-username="${attrUsername}">Setup 2FA</button>`:`<button class="btn btn-ghost btn-sm" data-action="disableTOTP" data-username="${attrUsername}">Disable 2FA</button>`}<button class="btn btn-ghost btn-sm" data-action="resetPwd" data-username="${attrUsername}">Reset pwd</button><button class="btn btn-danger btn-sm" data-action="deleteUser" data-username="${attrUsername}">✕</button></div></td>`;
+    tr.innerHTML=`<td class="mono-cell">${safeUsername}</td><td><span class="tag ${u.enabled?'tag-valid':'tag-expired'}">${u.enabled?'actif':'désactivé'}</span></td><td>${u.admin?'<span class="tag tag-warn">admin</span>':'<span class="muted-mono">utilisateur</span>'}</td><td><span class="storage-value">${escapeHtml(storageLabel)}</span></td><td>${u.totp_enabled?'<span class="tag tag-valid">2FA</span>':'<span class="muted-mono">—</span>'}</td><td><div class="table-actions"><button class="btn btn-ghost btn-sm" data-action="showSetUserStorageModal" data-username="${attrUsername}" data-storage-max="${storageMaxAttr}">Quota</button><button class="btn btn-ghost btn-sm" data-action="toggleUser" data-username="${attrUsername}" data-enabled="${String(u.enabled)}">${u.enabled?'Désactiver':'Activer'}</button>${!u.totp_enabled?`<button class="btn btn-ghost btn-sm" data-action="setupTOTP" data-username="${attrUsername}">Configurer 2FA</button>`:`<button class="btn btn-ghost btn-sm" data-action="disableTOTP" data-username="${attrUsername}">Désactiver 2FA</button>`}<button class="btn btn-ghost btn-sm" data-action="resetPwd" data-username="${attrUsername}">Réinit. mdp</button><button class="btn btn-danger btn-sm" data-action="deleteUser" data-username="${attrUsername}">${ICON_TRASH}</button></div></td>`;
     tbody.appendChild(tr);
   }
 }
@@ -673,12 +723,12 @@ async function doCreateUser(){
   if(homePath!=='')payload.home_path=homePath;
   if(groupName!=='')payload.group_name=groupName;
   const storageMaxBytes=parseStorageLimit(storageMaxRaw,storageMaxUnit);
-  if(storageMaxBytes==='invalid'){toast('Storage max must be a non-negative number','error');return}
+  if(storageMaxBytes==='invalid'){toast('Le quota doit être un nombre positif ou nul','error');return}
   if(storageMaxBytes!==null)payload.storage_max_bytes=storageMaxBytes;
   const resp=await api('POST','/users/',payload);
   if(!resp.ok){const d=await resp.json();toast(d.detail,'error');return}
   if(isAdmin)await api('POST','/users/'+username+'/admin?grant=true');
-  toast('User "'+username+'" created','success');closeModal('user-modal');loadUsers();
+  toast('Utilisateur "'+username+'" créé','success');closeModal('user-modal');loadUsers();
 }
 function showSetUserStorageModal(username,currentStorageMax){
   userStorageTarget=username;
@@ -692,21 +742,21 @@ async function doSetUserStorage(){
   const raw=document.getElementById('user-storage-max').value.trim();
   const unit=document.getElementById('user-storage-max-unit').value;
   const bytes=parseStorageLimit(raw,unit);
-  if(bytes==='invalid'){toast('Storage max must be a non-negative number','error');return}
+  if(bytes==='invalid'){toast('Le quota doit être un nombre positif ou nul','error');return}
   const payload={bytes_allocated:bytes};
   const resp=await api('PUT','/storage/allocations/user/'+userStorageTarget,payload);
-  if(resp.ok){toast('Storage max updated','success');closeModal('user-storage-modal');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}
+  if(resp.ok){toast('Quota mis à jour','success');closeModal('user-storage-modal');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}
 }
-async function toggleUser(username,enabled){const action=enabled?'disable':'enable';const resp=await api('POST','/users/'+username+'/'+action);if(resp.ok){toast('User '+action+'d','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
-async function resetPwd(username){if(!confirm('Reset password for "'+username+'"?'))return;const resp=await api('POST','/users/'+username+'/reset-password');if(resp.ok){const d=await resp.json();alert('New temporary password for '+username+':\n\n'+d.temporary_password+'\n\nShare this securely.')}else{const d=await resp.json();toast(d.detail,'error')}}
-async function deleteUser(username){if(!confirm('Delete user "'+username+'"?'))return;const resp=await api('DELETE','/users/'+username);if(resp.ok){toast('User deleted','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function toggleUser(username,enabled){const action=enabled?'disable':'enable';const resp=await api('POST','/users/'+username+'/'+action);if(resp.ok){toast(enabled?'Utilisateur désactivé':'Utilisateur activé','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function resetPwd(username){if(!confirm('Réinitialiser le mot de passe de "'+username+'" ?'))return;const resp=await api('POST','/users/'+username+'/reset-password');if(resp.ok){const d=await resp.json();alert('Nouveau mot de passe temporaire pour '+username+':\n\n'+d.temporary_password+'\n\nÀ partager de façon sécurisée.')}else{const d=await resp.json();toast(d.detail,'error')}}
+async function deleteUser(username){if(!confirm('Supprimer l’utilisateur "'+username+'" ?'))return;const resp=await api('DELETE','/users/'+username);if(resp.ok){toast('Utilisateur supprimé','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
 async function setupTOTP(username){
   totpTargetUser=username;
   document.getElementById('totp-modal-user').textContent=username;
   document.getElementById('totp-confirm-code').value='';
   hide(document.getElementById('totp-confirm-error'));
   document.getElementById('totp-qr-img').src='';
-  document.getElementById('totp-secret-display').textContent='Loading…';
+  document.getElementById('totp-secret-display').textContent='Chargement…';
   openModal('totp-modal');
   const resp=await api('POST','/users/'+username+'/totp/setup');
   if(!resp.ok){const d=await resp.json();toast(d.detail,'error');closeModal('totp-modal');return}
@@ -718,42 +768,42 @@ async function doTOTPConfirm(){
   const code=document.getElementById('totp-confirm-code').value.trim();
   hide(document.getElementById('totp-confirm-error'));
   const resp=await api('POST','/users/'+totpTargetUser+'/totp/confirm',{code});
-  if(resp.ok){toast('2FA enabled','success');closeModal('totp-modal');loadUsers();if(document.getElementById('panel-settings').classList.contains('active'))loadSettings()}
-  else{const d=await resp.json();const el=document.getElementById('totp-confirm-error');el.textContent=d.detail||'Invalid code';show(el)}
+  if(resp.ok){toast('2FA activée','success');closeModal('totp-modal');loadUsers();if(document.getElementById('panel-settings').classList.contains('active'))loadSettings()}
+  else{const d=await resp.json();const el=document.getElementById('totp-confirm-error');el.textContent=d.detail||'Code invalide';show(el)}
 }
-async function disableTOTP(username){if(!confirm('Disable 2FA for "'+username+'"?'))return;const resp=await api('DELETE','/users/'+username+'/totp');if(resp.ok){toast('2FA disabled','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function disableTOTP(username){if(!confirm('Désactiver la 2FA pour "'+username+'" ?'))return;const resp=await api('DELETE','/users/'+username+'/totp');if(resp.ok){toast('2FA désactivée','success');loadUsers()}else{const d=await resp.json();toast(d.detail,'error')}}
 
 const ALL_PERMS=['LIST','PREVIEW','DOWNLOAD','UPLOAD','COPY','RENAME','MOVE','DELETE','MANAGE_PERMS','SHARE'];
 let _cachedUsers=[],_cachedGroups=[];
 async function loadPerms(){
   const [rr,gr]=await Promise.all([api('GET','/permissions/rules'),api('GET','/permissions/groups')]);
-  if(!rr.ok||!gr.ok){toast('Cannot load permissions','error');return}
+  if(!rr.ok||!gr.ok){toast('Impossible de charger les permissions','error');return}
   const rules=await rr.json();const groups=await gr.json();_cachedGroups=groups;
   const gl=document.getElementById('groups-list');gl.innerHTML='';
-  if(!groups.length)gl.innerHTML='<div class="empty-state empty-state-compact"><span class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>No groups yet</div>';
+  if(!groups.length)gl.innerHTML='<div class="empty-state empty-state-compact"><span class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Aucun groupe</div>';
   for(const g of groups){
     const div=document.createElement('div');div.className='group-card';
     const attrGroup=escapeAttr(g.name);
     const safeGroup=escapeHtml(g.name);
-    const mh=g.members.length?g.members.map(m=>`<span class="member-tag">${escapeHtml(m)}<span class="member-remove" data-action="removeMember" data-group="${attrGroup}" data-username="${escapeAttr(m)}">✕</span></span>`).join(''):'<span class="empty-member">empty</span>';
-    const storageLabel=g.storage_max_bytes===null||g.storage_max_bytes===undefined?'Unlimited':humanBytes(g.storage_max_bytes);
-    const homeMeta=g.home_path?`Home: ${escapeHtml(g.home_path)}${g.home_auto_user_subdir?'/&lt;username&gt;':''}`:'Home: none';
-    div.innerHTML=`<div class="group-header"><span class="group-name"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ${safeGroup}</span><button class="btn btn-ghost btn-sm" data-action="showAddMemberModal" data-group="${attrGroup}">+ Member</button><button class="btn btn-danger btn-sm" data-action="deleteGroup" data-group="${attrGroup}">✕</button></div><div class="group-meta">Storage max: <span class="storage-value">${escapeHtml(storageLabel)}</span> · ${homeMeta}</div><div class="group-members">${mh}</div>`;
+    const mh=g.members.length?g.members.map(m=>`<span class="member-tag">${escapeHtml(m)}<span class="member-remove" data-action="removeMember" data-group="${attrGroup}" data-username="${escapeAttr(m)}">${ICON_TRASH}</span></span>`).join(''):'<span class="empty-member">vide</span>';
+    const storageLabel=g.storage_max_bytes===null||g.storage_max_bytes===undefined?'Illimité':humanBytes(g.storage_max_bytes);
+    const homeMeta=g.home_path?`Accueil : ${escapeHtml(g.home_path)}${g.home_auto_user_subdir?'/&lt;username&gt;':''}`:'Accueil : aucun';
+    div.innerHTML=`<div class="group-header"><span class="group-name"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ${safeGroup}</span><button class="btn btn-ghost btn-sm" data-action="showAddMemberModal" data-group="${attrGroup}">+ Membre</button><button class="btn btn-danger btn-sm" data-action="deleteGroup" data-group="${attrGroup}">${ICON_TRASH}</button></div><div class="group-meta">Quota: <span class="storage-value">${escapeHtml(storageLabel)}</span> · ${homeMeta}</div><div class="group-members">${mh}</div>`;
     gl.appendChild(div);
   }
   const rl=document.getElementById('rules-list');rl.innerHTML='';
-  if(!rules.length)rl.innerHTML='<div class="empty-state empty-state-compact"><span class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>No rules yet</div>';
+  if(!rules.length)rl.innerHTML='<div class="empty-state empty-state-compact"><span class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Aucune règle</div>';
   for(const r of rules){
     const div=document.createElement('div');div.className='rule-card';
     const ph=r.permissions.map(p=>'<span class="perm-badge">'+escapeHtml(p)+'</span>').join('');
-    div.innerHTML='<div class="rule-info"><div class="rule-subject">'+(r.subject_type==='user'?'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>':'<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>')+' '+escapeHtml(r.subject_id)+'</div><div class="rule-path">→ '+escapeHtml(r.path)+'</div><div class="rule-perms">'+ph+'</div></div><button class="btn btn-danger btn-sm" data-action="deleteRule" data-rule-id="'+Number(r.rule_id)+'">✕</button>';
+    div.innerHTML='<div class="rule-info"><div class="rule-subject">'+(r.subject_type==='user'?'<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>':'<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>')+' '+escapeHtml(r.subject_id)+'</div><div class="rule-path">→ '+escapeHtml(r.path)+'</div><div class="rule-perms">'+ph+'</div></div><button class="btn btn-danger btn-sm" data-action="deleteRule" data-rule-id="'+Number(r.rule_id)+'">'+ICON_TRASH+'</button>';
     rl.appendChild(div);
   }
 }
-async function deleteRule(id){if(!confirm('Delete this rule?'))return;const resp=await api('DELETE','/permissions/rules/'+id);if(resp.ok){toast('Rule deleted','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function deleteRule(id){if(!confirm('Supprimer cette règle ?'))return;const resp=await api('DELETE','/permissions/rules/'+id);if(resp.ok){toast('Règle supprimée','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
 function showCreateGroupModal(){document.getElementById('group-name').value='';document.getElementById('group-home-path').value='';document.getElementById('group-home-auto').checked=false;document.getElementById('group-storage-max').value='';document.getElementById('group-storage-max-unit').value='GB';openModal('group-modal')}
-async function doCreateGroup(){const name=document.getElementById('group-name').value.trim();if(!name)return;const homePath=document.getElementById('group-home-path').value.trim();const autoHome=document.getElementById('group-home-auto').checked;const storageMaxRaw=document.getElementById('group-storage-max').value.trim();const storageMaxUnit=document.getElementById('group-storage-max-unit').value;const payload={};if(homePath!=='')payload.home_path=homePath;payload.auto_generate_user_home=autoHome;const storageMaxBytes=parseStorageLimit(storageMaxRaw,storageMaxUnit);if(storageMaxBytes==='invalid'){toast('Storage max must be a non-negative number','error');return}if(storageMaxBytes!==null)payload.storage_max_bytes=storageMaxBytes;const resp=await api('POST','/permissions/groups/'+name,payload);if(resp.ok){toast('Group created','success');closeModal('group-modal');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
-async function deleteGroup(name){if(!confirm('Delete group "'+name+'"?'))return;const resp=await api('DELETE','/permissions/groups/'+name);if(resp.ok){toast('Group deleted','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function doCreateGroup(){const name=document.getElementById('group-name').value.trim();if(!name)return;const homePath=document.getElementById('group-home-path').value.trim();const autoHome=document.getElementById('group-home-auto').checked;const storageMaxRaw=document.getElementById('group-storage-max').value.trim();const storageMaxUnit=document.getElementById('group-storage-max-unit').value;const payload={};if(homePath!=='')payload.home_path=homePath;payload.auto_generate_user_home=autoHome;const storageMaxBytes=parseStorageLimit(storageMaxRaw,storageMaxUnit);if(storageMaxBytes==='invalid'){toast('Le quota doit être un nombre positif ou nul','error');return}if(storageMaxBytes!==null)payload.storage_max_bytes=storageMaxBytes;const resp=await api('POST','/permissions/groups/'+name,payload);if(resp.ok){toast('Groupe créé','success');closeModal('group-modal');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function deleteGroup(name){if(!confirm('Supprimer le groupe "'+name+'" ?'))return;const resp=await api('DELETE','/permissions/groups/'+name);if(resp.ok){toast('Groupe supprimé','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
 async function showAddMemberModal(groupName){
   memberTargetGroup=groupName;document.getElementById('member-group-name').textContent=groupName;
   const sel=document.getElementById('member-username');sel.innerHTML='';
@@ -761,8 +811,8 @@ async function showAddMemberModal(groupName){
   for(const u of _cachedUsers){const opt=document.createElement('option');opt.value=u.username;opt.textContent=u.username;sel.appendChild(opt)}
   openModal('member-modal');
 }
-async function doAddMember(){const username=document.getElementById('member-username').value;const resp=await api('POST','/permissions/groups/'+memberTargetGroup+'/members',{username});if(resp.ok){toast('Member added','success');closeModal('member-modal');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
-async function removeMember(g,u){if(!confirm('Remove "'+u+'" from "'+g+'"?'))return;const resp=await api('DELETE','/permissions/groups/'+g+'/members/'+u);if(resp.ok){toast('Removed','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function doAddMember(){const username=document.getElementById('member-username').value;const resp=await api('POST','/permissions/groups/'+memberTargetGroup+'/members',{username});if(resp.ok){toast('Membre ajouté','success');closeModal('member-modal');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
+async function removeMember(g,u){if(!confirm('Retirer "'+u+'" du groupe "'+g+'" ?'))return;const resp=await api('DELETE','/permissions/groups/'+g+'/members/'+u);if(resp.ok){toast('Retiré','success');loadPerms()}else{const d=await resp.json();toast(d.detail,'error')}}
 async function showAddRuleModal(){
   if(!_cachedUsers.length){const r=await api('GET','/users/');if(r.ok)_cachedUsers=await r.json()}
   document.getElementById('rule-path').value='/';

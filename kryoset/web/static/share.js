@@ -2,6 +2,7 @@ function hide(el){if(el)el.classList.add('hidden')}
 function show(el){if(el)el.classList.remove('hidden')}
 
 const token = location.pathname.split('/').pop();
+const DOWNLOAD_LABEL = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Télécharger le fichier';
 
 function getFileIcon(name) {
   if (!name) return '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>';
@@ -19,7 +20,7 @@ async function loadShareInfo() {
   if (!resp.ok) {
     show(document.getElementById('error-state'));
     document.getElementById('error-text').textContent =
-      resp.status === 404 ? 'This link has expired or does not exist.' : 'An error occurred.';
+      resp.status === 404 ? 'Ce lien a expiré ou n’existe pas.' : 'Une erreur est survenue.';
     return;
   }
 
@@ -31,10 +32,10 @@ async function loadShareInfo() {
   document.getElementById('file-name').textContent = fileName;
 
   const meta = [];
-  if (data.expires_at) meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Expires ${new Date(data.expires_at).toLocaleString()}</span>`);
-  else meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> No expiry</span>`);
-  if (data.download_limit) meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${data.download_count}/${data.download_limit} downloads used</span>`);
-  else meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${data.download_count} downloads</span>`);
+  if (data.expires_at) meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Expire le ${new Date(data.expires_at).toLocaleString()}</span>`);
+  else meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sans expiration</span>`);
+  if (data.download_limit) meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${data.download_count}/${data.download_limit} téléchargements utilisés</span>`);
+  else meta.push(`<span><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${data.download_count} téléchargements</span>`);
   document.getElementById('file-meta').innerHTML = meta.join('');
 
   if (data.password_protected) {
@@ -45,7 +46,7 @@ async function loadShareInfo() {
 async function download() {
   const btn = document.getElementById('dl-btn');
   btn.disabled = true;
-  btn.textContent = 'Downloading…';
+  btn.textContent = 'Téléchargement…';
 
   const pwd = document.getElementById('pwd-input').value;
 
@@ -55,10 +56,10 @@ async function download() {
     body: JSON.stringify({password: pwd || null})
   });
   btn.disabled = false;
-  btn.textContent = '↓ Download';
+  btn.innerHTML = DOWNLOAD_LABEL;
 
   if (!resp.ok) {
-    const data = await resp.json().catch(() => ({ detail: 'Download failed.' }));
+    const data = await resp.json().catch(() => ({ detail: 'Téléchargement impossible.' }));
     const msg = document.getElementById('dl-msg');
     msg.className = 'msg msg-error';
     msg.textContent = data.detail;
@@ -82,7 +83,7 @@ async function download() {
 
   const msg = document.getElementById('dl-msg');
   msg.className = 'msg msg-success';
-  msg.textContent = '✓ Download started.';
+  msg.textContent = 'Téléchargement démarré.';
 }
 
 

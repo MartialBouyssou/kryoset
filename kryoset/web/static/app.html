@@ -12,17 +12,17 @@
 <div id="login-screen">
 <div class="login-box">
 <div class="login-logo">kryoset<span>.nas</span></div>
-<div class="login-sub">Secure self-hosted storage</div>
+<div class="login-sub">Stockage privé auto-hébergé</div>
 <div id="login-form">
-<div class="field"><label>Username</label><input autocomplete="username" id="login-user" placeholder="username" type="text"/></div>
-<div class="field"><label>Password</label><input autocomplete="current-password" id="login-pass" placeholder="••••••••" type="password"/></div>
-<button class="btn btn-primary" id="login-btn" type="button">Connect</button>
+<div class="field"><label>Utilisateur</label><input autocomplete="username" id="login-user" placeholder="username" type="text"/></div>
+<div class="field"><label>Mot de passe</label><input autocomplete="current-password" id="login-pass" placeholder="••••••••" type="password"/></div>
+<button class="btn btn-primary" id="login-btn" type="button">Se connecter</button>
 <div class="error-msg hidden" id="login-error"></div>
 </div>
 <div class="hidden" id="totp-form">
-<p class="login-totp-note">Enter the 6-digit code from your authenticator app.</p>
+<p class="login-totp-note">Saisissez le code à 6 chiffres de votre application d’authentification.</p>
 <div class="field"><label>Code</label><input class="totp-code-input" id="totp-code" inputmode="numeric" maxlength="6" placeholder="000000" type="text"/></div>
-<button class="btn btn-primary" id="totp-btn" type="button">Verify</button>
+<button class="btn btn-primary" id="totp-btn" type="button">Vérifier</button>
 <div class="error-msg hidden" id="totp-error"></div>
 </div>
 </div>
@@ -32,14 +32,14 @@
 <div id="sidebar">
 <div class="sidebar-logo">kryoset<small>NAS v1.0.2</small></div>
 <div class="sidebar-nav">
-<div class="nav-section">Storage</div>
-<div class="nav-item active" data-action="showPanel" data-arg1="files" id="nav-files"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>Files</div>
-<div class="nav-item" data-action="showPanel" data-arg1="shares" id="nav-shares"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.1 4.82"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.9 19.18"></path></svg></span>Shared links</div>
-<div class="nav-item" data-action="showPanel" data-arg1="settings" id="nav-settings"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.05V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1-.33 1.7 1.7 0 0 0-1 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.05-.4H2.9a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.05V2.9a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1.6 1 1.7 1.7 0 0 0 1-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.05.4h.1a2 2 0 1 1 0 4h-.1A1.7 1.7 0 0 0 20 14a1.7 1.7 0 0 0-.6 1z"></path></svg></span>Settings</div>
-<div class="nav-section admin-only hidden">Admin</div>
-<div class="nav-item admin-only hidden" data-action="showPanel" data-arg1="users" id="nav-users"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg></span>Users</div>
+<div class="nav-section">Stockage</div>
+<div class="nav-item active" data-action="showPanel" data-arg1="files" id="nav-files"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>Fichiers</div>
+<div class="nav-item" data-action="showPanel" data-arg1="shares" id="nav-shares"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.1 4.82"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.9 19.18"></path></svg></span>Liens partagés</div>
+<div class="nav-item" data-action="showPanel" data-arg1="settings" id="nav-settings"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.05V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1-.33 1.7 1.7 0 0 0-1 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.05-.4H2.9a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.05V2.9a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1.6 1 1.7 1.7 0 0 0 1-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.05.4h.1a2 2 0 1 1 0 4h-.1A1.7 1.7 0 0 0 20 14a1.7 1.7 0 0 0-.6 1z"></path></svg></span>Paramètres</div>
+<div class="nav-section admin-only hidden">Administration</div>
+<div class="nav-item admin-only hidden" data-action="showPanel" data-arg1="users" id="nav-users"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg></span>Utilisateurs</div>
 <div class="nav-item admin-only hidden" data-action="showPanel" data-arg1="perms" id="nav-perms"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"></path><path d="M9 12l2 2 4-4"></path></svg></span>Permissions</div>
-<div class="nav-item admin-only hidden" data-action="showPanel" data-arg1="logs" id="nav-logs"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" x2="8" y1="13" y2="13"></line><line x1="16" x2="8" y1="17" y2="17"></line></svg></span>Audit logs</div>
+<div class="nav-item admin-only hidden" data-action="showPanel" data-arg1="logs" id="nav-logs"><span class="icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" x2="8" y1="13" y2="13"></line><line x1="16" x2="8" y1="17" y2="17"></line></svg></span>Journaux d’audit</div>
 </div>
 <div class="sidebar-footer">
 <div class="user-badge"><strong id="sidebar-username"></strong><div class="admin-tag hidden" id="sidebar-admin-tag">admin</div></div>
@@ -47,7 +47,7 @@
 <div class="sidebar-quota-text" id="sidebar-quota-text">—</div>
 <div class="quota-meter"><div class="quota-meter-fill pct-0" id="sidebar-quota-fill"></div></div>
 </div>
-<button class="btn btn-ghost btn-sm full-width" data-action="doLogout">Logout</button><a class="privacy-link" href="/privacy">Confidentialité</a>
+<button class="btn btn-ghost btn-sm full-width" data-action="doLogout">Se déconnecter</button><a class="privacy-link" href="/privacy">Confidentialité</a>
 </div>
 </div>
 <div id="main">
@@ -56,208 +56,224 @@
 <div class="topbar">
 <div class="breadcrumb" id="breadcrumb"></div>
 <div class="topbar-tools">
-<label class="checkbox-label checkbox-label-small"><input data-action="reloadFiles" data-event="change" id="show-hidden" type="checkbox"/> Hidden</label>
+<label class="checkbox-label checkbox-label-small"><input data-action="reloadFiles" data-event="change" id="show-hidden" type="checkbox"/> Fichiers cachés</label>
 <div class="view-toggle">
-<button class="active" data-action="setView" data-arg1="list" id="view-list-btn" title="List">☰</button>
-<button data-action="setView" data-arg1="grid" id="view-grid-btn" title="Grid">⊞</button>
+<button class="active" data-action="setView" data-arg1="list" id="view-list-btn" title="Liste"><svg aria-hidden="true" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+<button data-action="setView" data-arg1="grid" id="view-grid-btn" title="Grille"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></button>
 </div>
 <select class="sort-select" data-action="reloadFiles" data-event="change" id="sort-select">
-<option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option>
+<option value="name">Nom</option><option value="size">Taille</option><option value="modified">Modification</option>
 </select>
-<button class="btn btn-ghost btn-sm" data-action="reloadFiles">↻</button>
+<button class="btn btn-ghost btn-sm" data-action="reloadFiles" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button>
 </div>
 </div>
-<div id="content-wrapper">
+<div id="content-wrapper" class="files-content">
+<div class="files-primary">
 <div class="toolbar">
-<label class="btn btn-ghost btn-sm upload-label">↑ Upload<input class="hidden" data-action="handleUpload" data-arg1="this.files" data-event="change" id="upload-input" multiple="" type="file"/></label>
-<button class="btn btn-ghost btn-sm" data-action="showMkdirModal">+ Folder</button>
+<label class="btn btn-ghost btn-sm upload-label"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M20 16.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.5"/></svg> Téléverser<input class="hidden" data-action="handleUpload" data-arg1="this.files" data-event="change" id="upload-input" multiple="" type="file"/></label>
+<button class="btn btn-ghost btn-sm" data-action="showMkdirModal"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Dossier</button>
 <div class="path-display" id="path-display">/</div>
 </div>
 <div class="dropzone" id="dropzone"><span class="drop-icon"><svg aria-hidden="true" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M20 16v2a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-2"></path></svg></span><br/> Drop files here to upload</div>
 <div id="file-list-view">
 <table class="file-table">
 <thead><tr>
-<th data-action="toggleSort" data-arg1="name">Name <span id="sort-name-icon"></span></th>
-<th data-action="toggleSort" data-arg1="size">Size <span id="sort-size-icon"></span></th>
-<th data-action="toggleSort" data-arg1="modified">Modified <span id="sort-modified-icon"></span></th>
+<th data-action="toggleSort" data-arg1="name">Nom <span id="sort-name-icon"></span></th>
+<th data-action="toggleSort" data-arg1="size">Taille <span id="sort-size-icon"></span></th>
+<th data-action="toggleSort" data-arg1="modified">Modifié <span id="sort-modified-icon"></span></th>
 <th class="actions-col">Actions</th>
 </tr></thead>
 <tbody id="file-list"></tbody>
 </table>
 </div>
 <div class="hidden" id="file-grid-view"><div class="file-grid" id="file-grid"></div></div>
-<div class="empty-state hidden" id="files-empty"><span class="empty-icon">📂</span>Empty folder</div>
+<div class="empty-state hidden" id="files-empty"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>Dossier vide</div>
+</div>
+<aside class="file-detail-panel" id="file-detail-panel">
+  <div class="detail-empty">
+    <span class="detail-orb"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <strong>Aucun fichier sélectionné</strong>
+    <p>Sélectionnez une ligne pour voir les détails, les actions et les informations de partage.</p>
+  </div>
+</aside>
 </div>
 </div>
 <!-- SETTINGS -->
 <div class="panel" id="panel-settings">
-<div class="topbar"><div class="topbar-title">Settings</div><button class="btn btn-ghost btn-sm" data-action="loadSettings">↻</button></div>
+<div class="topbar"><div class="topbar-title">Paramètres</div><button class="btn btn-ghost btn-sm" data-action="loadSettings" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
 <div id="content-wrapper">
 <div class="settings-grid">
 <div class="settings-card">
-<div class="settings-title">Account</div>
-<div class="settings-meta"><span>Username: <strong id="settings-username">—</strong></span><span>Role: <strong id="settings-role">—</strong></span></div>
-<div class="field"><label>New password</label><input id="settings-new-password" placeholder="New strong password" type="password"/></div>
-<div class="field"><label>Confirm password</label><input id="settings-new-password-confirm" placeholder="Repeat new password" type="password"/></div>
+<div class="settings-title">Compte</div>
+<div class="settings-meta"><span>Utilisateur: <strong id="settings-username">—</strong></span><span>Rôle: <strong id="settings-role">—</strong></span></div>
+<div class="field"><label>Nouveau mot de passe</label><input id="settings-new-password" placeholder="Nouveau mot de passe fort" type="password"/></div>
+<div class="field"><label>Confirmation</label><input id="settings-new-password-confirm" placeholder="Répéter le mot de passe" type="password"/></div>
 <div class="app-inline-1">
-<button class="btn btn-primary btn-auto-width" data-action="doChangeMyPassword">Update password</button>
-<button class="btn btn-ghost btn-sm" data-action="loadSettings">Reload</button>
+<button class="btn btn-primary btn-auto-width" data-action="doChangeMyPassword">Mettre à jour</button>
+<button class="btn btn-ghost btn-sm" data-action="loadSettings">Recharger</button>
 </div>
 <div class="error-msg hidden" id="settings-password-msg"></div>
 </div>
 <div class="settings-card">
-<div class="settings-title">Security</div>
-<div class="settings-meta"><span>TOTP: <strong id="settings-totp-status">—</strong></span><span>Last refresh: <strong id="settings-last-refresh">—</strong></span></div>
+<div class="settings-title">Sécurité</div>
+<div class="settings-meta"><span>TOTP: <strong id="settings-totp-status">—</strong></span><span>Dernière mise à jour: <strong id="settings-last-refresh">—</strong></span></div>
 <div class="toolbar sidebar-quota-block">
-<button class="btn btn-ghost btn-sm" data-action="setupMyTOTP">Set up 2FA</button>
-<button class="btn btn-danger btn-sm" data-action="disableMyTOTP">Disable 2FA</button>
+<button class="btn btn-ghost btn-sm" data-action="setupMyTOTP">Configurer 2FA</button>
+<button class="btn btn-danger btn-sm" data-action="disableMyTOTP">Désactiver 2FA</button>
 </div>
-<div class="settings-note">2FA adds a second step during sign-in and is recommended for every account.</div>
+<div class="settings-note">La 2FA ajoute une étape à la connexion et sécurise fortement le compte.</div>
 </div>
 <div class="settings-card">
-<div class="settings-title">Storage</div>
+<div class="settings-title">Stockage</div>
 <div class="settings-meta" id="settings-quota-summary">—</div>
 <div class="quota-meter"><div class="quota-meter-fill" id="settings-quota-fill"></div></div>
 <div class="settings-meta" id="settings-quota-detail"></div>
-<div class="settings-note" id="settings-storage-note">This reflects the personal storage quota for your account when one is configured.</div>
+<div class="settings-note" id="settings-storage-note">Ce bloc reflète le quota personnel lorsqu’il est configuré.</div>
 </div>
 <div class="settings-card settings-card-wide">
-<div class="settings-title">Recent logins</div>
+<div class="settings-title">Connexions récentes</div>
 <div class="activity-list" id="settings-logins"></div>
-<div class="empty-state hidden settings-empty-compact" id="settings-logins-empty"><span class="empty-icon">🔓</span>No recent successful logins found</div>
+<div class="empty-state hidden settings-empty-compact" id="settings-logins-empty"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Aucune connexion récente</div>
 </div>
 <div class="settings-card settings-card-wide">
-<div class="settings-title">Failed attempts</div>
+<div class="settings-title">Tentatives échouées</div>
 <div class="activity-list" id="settings-failures"></div>
-<div class="empty-state hidden settings-empty-compact" id="settings-failures-empty"><span class="empty-icon">⚠</span>No recent failed authentication attempts</div>
+<div class="empty-state hidden settings-empty-compact" id="settings-failures-empty"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Aucune tentative échouée récente</div>
 </div>
 </div>
 </div>
 </div>
 <!-- SHARES -->
 <div class="panel" id="panel-shares">
-<div class="topbar"><div class="topbar-title">Shared links</div><button class="btn btn-ghost btn-sm" data-action="loadShares">↻</button></div>
+<div class="topbar"><div class="topbar-title">Liens partagés</div><button class="btn btn-ghost btn-sm" data-action="loadShares" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
 <div id="content-wrapper">
-<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateShareModal">+ Create share link</button></div>
+<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateShareModal">+ Créer un lien</button></div>
 <div id="shares-list"></div>
-<div class="empty-state hidden" id="shares-empty"><span class="empty-icon">🔗</span>No active share links</div>
+<div class="empty-state hidden" id="shares-empty"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1 0l2.8-2.8a5 5 0 0 0-7.1-7.1L11.1 4.8"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.8 2.8a5 5 0 0 0 7.1 7.1l1.7-1.7"/></svg></span>Aucun lien actif</div>
 </div>
 </div>
 <!-- USERS -->
 <div class="panel" id="panel-users">
-<div class="topbar"><div class="topbar-title">User management</div><button class="btn btn-ghost btn-sm" data-action="loadUsers">↻</button></div>
+<div class="topbar"><div class="topbar-title">Utilisateurs</div><button class="btn btn-ghost btn-sm" data-action="loadUsers" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
 <div id="content-wrapper">
-<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateUserModal">+ Add user</button></div>
+<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateUserModal">+ Ajouter un utilisateur</button></div>
 <table class="users-table">
-<thead><tr><th>Username</th><th>Status</th><th>Role</th><th>Storage max</th><th>2FA</th><th>Actions</th></tr></thead>
+<thead><tr><th>Utilisateur</th><th>Statut</th><th>Rôle</th><th>Quota</th><th>2FA</th><th>Actions</th></tr></thead>
 <tbody id="users-list"></tbody>
 </table>
 </div>
 </div>
 <!-- PERMISSIONS -->
 <div class="panel" id="panel-perms">
-<div class="topbar"><div class="topbar-title">Permissions</div><button class="btn btn-ghost btn-sm" data-action="loadPerms">↻</button></div>
+<div class="topbar"><div class="topbar-title">Permissions</div><button class="btn btn-ghost btn-sm" data-action="loadPerms" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
 <div id="content-wrapper">
 <div class="perm-section">
-<div class="perm-section-title">Groups</div>
-<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateGroupModal">+ New group</button></div>
+<div class="perm-section-title">Groupes</div>
+<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showCreateGroupModal">+ Nouveau groupe</button></div>
 <div id="groups-list"></div>
 </div>
 <div class="perm-section">
-<div class="perm-section-title">Permission rules</div>
-<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showAddRuleModal">+ Add rule</button></div>
+<div class="perm-section-title">Règles de permission</div>
+<div class="toolbar"><button class="btn btn-ghost btn-sm" data-action="showAddRuleModal">+ Ajouter une règle</button></div>
 <div id="rules-list"></div>
 </div>
 </div>
 </div>
 <!-- LOGS -->
 <div class="panel" id="panel-logs">
-<div class="topbar"><div class="topbar-title">Audit logs</div><button class="btn btn-ghost btn-sm" data-action="loadLogs">↻</button></div>
+<div class="topbar"><div class="topbar-title">Journaux d’audit</div><button class="btn btn-ghost btn-sm" data-action="loadLogs" title="Actualiser"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
 <div id="content-wrapper">
 <div class="toolbar">
-<input class="logs-filter-input" id="log-filter" placeholder="Filter events..." type="text"/>
-<button class="btn btn-ghost btn-sm" data-action="loadLogs">Apply</button>
+<input class="logs-filter-input" id="log-filter" placeholder="Filtrer les événements..." type="text"/>
+<button class="btn btn-ghost btn-sm" data-action="loadLogs">Appliquer</button>
 </div>
 <div class="log-output" id="log-output"></div>
-<div class="empty-state hidden" id="logs-empty"><span class="empty-icon">📋</span>No log entries</div>
+<div class="empty-state hidden" id="logs-empty"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg></span>Aucun journal</div>
 </div>
 </div>
 </div>
 </div>
 <div id="upload-tray"></div>
+<nav id="mobile-nav" aria-label="Navigation mobile">
+  <button class="mobile-nav-item active" data-panel="files" data-action="showPanel" data-arg1="files"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span>Fichiers</span></button>
+  <button class="mobile-nav-item" data-panel="shares" data-action="showPanel" data-arg1="shares"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1 0l2.8-2.8a5 5 0 0 0-7.1-7.1L11.1 4.8"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.8 2.8a5 5 0 0 0 7.1 7.1l1.7-1.7"/></svg><span>Liens</span></button>
+  <label class="mobile-nav-item mobile-upload" for="upload-input"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M20 16.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.5"/></svg><span>Upload</span></label>
+  <button class="mobile-nav-item" data-panel="settings" data-action="showPanel" data-arg1="settings"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.05V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1-.33 1.7 1.7 0 0 0-1 .33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.05-.4H2.9a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.05V2.9a2 2 0 1 1 4 0V3a1.7 1.7 0 0 0 1.6 1 1.7 1.7 0 0 0 1-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.05.4h.1a2 2 0 1 1 0 4h-.1A1.7 1.7 0 0 0 20 14a1.7 1.7 0 0 0-.6 1z"/></svg><span>Réglages</span></button>
+</nav>
+
 <!-- MODALS -->
 <div class="modal-overlay hidden" id="mkdir-modal"><div class="modal">
-<div class="modal-title">New folder</div>
-<div class="field"><label>Name</label><input id="mkdir-name" placeholder="new-folder" type="text"/></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="mkdir-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doMkdir">Create</button></div>
+<div class="modal-title">Nouveau dossier</div>
+<div class="field"><label>Nom</label><input id="mkdir-name" placeholder="new-folder" type="text"/></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="mkdir-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doMkdir">Créer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="rename-modal"><div class="modal">
-<div class="modal-title">Rename</div>
-<div class="field"><label>New name</label><input id="rename-new" type="text"/></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="rename-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doRename">Rename</button></div>
+<div class="modal-title">Renommer</div>
+<div class="field"><label>Nouveau nom</label><input id="rename-new" type="text"/></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="rename-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doRename">Renommer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="share-modal"><div class="modal">
-<div class="modal-title">Create share link</div>
-<div class="field"><label>Path</label><input id="share-path" placeholder="documents/report.pdf" type="text"/></div>
-<div class="field"><label>Expires after</label><select id="share-expires"><option value="">Never</option><option value="1h">1 hour</option><option value="24h">24 hours</option><option value="7d">7 days</option><option value="30d">30 days</option></select></div>
-<div class="field"><label>Download limit</label><input id="share-limit" min="1" placeholder="Unlimited" type="number"/></div>
-<div class="field"><label>Password (optional)</label><input id="share-password" placeholder="No password" type="password"/></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="share-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doCreateShare">Create</button></div>
+<div class="modal-title">Créer un lien de partage</div>
+<div class="field"><label>Chemin</label><input id="share-path" placeholder="documents/report.pdf" type="text"/></div>
+<div class="field"><label>Expiration</label><select id="share-expires"><option value="">Jamais</option><option value="1h">1 heure</option><option value="24h">24 heures</option><option value="7d">7 jours</option><option value="30d">30 jours</option></select></div>
+<div class="field"><label>Limite de téléchargements</label><input id="share-limit" min="1" placeholder="Illimité" type="number"/></div>
+<div class="field"><label>Mot de passe optionnel</label><input id="share-password" placeholder="Aucun mot de passe" type="password"/></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="share-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doCreateShare">Créer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="user-modal"><div class="modal">
-<div class="modal-title">Add user</div>
-<div class="field"><label>Username</label><input id="new-username" type="text"/></div>
-<div class="field"><label>Password</label><input id="new-password" placeholder="Min. 8 characters" type="password"/></div>
-<div class="field"><label>Home path (optional)</label><input id="new-home-path" placeholder="/home" type="text"/></div>
-<div class="field"><label>Add to group (optional)</label><select id="new-group-name"><option value="">None</option></select></div>
-<div class="field"><label>Storage max (optional)</label><div class="unit-input-row"><input id="new-storage-max" min="0" placeholder="Unlimited" step="0.01" type="number"/><select id="new-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
-<div class="field"><label class="checkbox-label"><input id="new-is-admin" type="checkbox"/> Admin role</label></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="user-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doCreateUser">Create</button></div>
+<div class="modal-title">Ajouter un utilisateur</div>
+<div class="field"><label>Utilisateur</label><input id="new-username" type="text"/></div>
+<div class="field"><label>Mot de passe</label><input id="new-password" placeholder="Min. 8 caractères" type="password"/></div>
+<div class="field"><label>Chemin personnel optionnel</label><input id="new-home-path" placeholder="/home" type="text"/></div>
+<div class="field"><label>Ajouter à un groupe optionnel</label><select id="new-group-name"><option value="">Aucun</option></select></div>
+<div class="field"><label>Quota de stockage optionnel</label><div class="unit-input-row"><input id="new-storage-max" min="0" placeholder="Illimité" step="0.01" type="number"/><select id="new-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
+<div class="field"><label class="checkbox-label"><input id="new-is-admin" type="checkbox"/> Rôle administrateur</label></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="user-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doCreateUser">Créer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="user-storage-modal"><div class="modal">
-<div class="modal-title">Set storage max — <span id="user-storage-user"></span></div>
-<div class="field"><label>Storage max (empty = unlimited)</label><div class="unit-input-row"><input id="user-storage-max" min="0" placeholder="Unlimited" step="0.01" type="number"/><select id="user-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="user-storage-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doSetUserStorage">Save</button></div>
+<div class="modal-title">Définir le quota — <span id="user-storage-user"></span></div>
+<div class="field"><label>Quota de stockage vide = illimité</label><div class="unit-input-row"><input id="user-storage-max" min="0" placeholder="Illimité" step="0.01" type="number"/><select id="user-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="user-storage-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doSetUserStorage">Enregistrer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="totp-modal"><div class="modal">
-<div class="modal-title">TOTP Setup — <span id="totp-modal-user"></span></div>
-<p class="login-totp-note">Scan with Google Authenticator or any TOTP app. Then confirm with the 6-digit code.</p>
+<div class="modal-title">Configuration TOTP — <span id="totp-modal-user"></span></div>
+<p class="login-totp-note">Scannez avec Google Authenticator ou une autre application TOTP, puis confirmez avec le code à 6 chiffres.</p>
 <div class="qr-box"><img alt="QR Code" class="app-inline-2" id="totp-qr-img" src=""/></div>
-<details class="details"><summary>Cannot scan? Use manual entry</summary><div class="secret-box" id="totp-secret-display"></div></details>
-<div class="field app-inline-3"><label>Confirmation code</label><input class="app-inline-4" id="totp-confirm-code" inputmode="numeric" maxlength="6" placeholder="000000" type="text"/></div>
+<details class="details"><summary>Scan impossible ? Saisie manuelle</summary><div class="secret-box" id="totp-secret-display"></div></details>
+<div class="field app-inline-3"><label>Code de confirmation</label><input class="app-inline-4" id="totp-confirm-code" inputmode="numeric" maxlength="6" placeholder="000000" type="text"/></div>
 <div class="error-msg hidden" id="totp-confirm-error"></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="totp-modal">Cancel</button><button class="btn btn-success btn-auto-width" data-action="doTOTPConfirm">Confirm &amp; Enable</button></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="totp-modal">Annuler</button><button class="btn btn-success btn-auto-width" data-action="doTOTPConfirm">Confirmer et activer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="preview-modal"><div class="modal app-inline-5">
-<div class="modal-title">Preview — <span id="preview-title"></span></div>
+<div class="modal-title">Aperçu — <span id="preview-title"></span></div>
 <div class="preview-area" id="preview-area"></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="preview-modal">Close</button><button class="btn btn-ghost" id="preview-download-btn">Download</button></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="preview-modal">Fermer</button><button class="btn btn-ghost" id="preview-download-btn">Télécharger</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="rule-modal"><div class="modal">
-<div class="modal-title">Add permission rule</div>
-<div class="field"><label>Subject type</label><select data-action="refreshRuleSubjectOptions" data-event="change" id="rule-subject-type"><option value="user">User</option><option value="group">Group</option></select></div>
-<div class="field"><label>Subject</label><select id="rule-subject-id"></select></div>
-<div class="field"><label>Path</label><input id="rule-path" placeholder="/documents" type="text"/></div>
+<div class="modal-title">Ajouter une règle de permission</div>
+<div class="field"><label>Type de sujet</label><select data-action="refreshRuleSubjectOptions" data-event="change" id="rule-subject-type"><option value="user">Utilisateur</option><option value="group">Groupe</option></select></div>
+<div class="field"><label>Sujet</label><select id="rule-subject-id"></select></div>
+<div class="field"><label>Chemin</label><input id="rule-path" placeholder="/documents" type="text"/></div>
 <div class="field"><label>Permissions</label><div class="app-inline-6" id="rule-perms-checkboxes"></div></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="rule-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doAddRule">Add rule</button></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="rule-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doAddRule">Ajouter la règle</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="group-modal"><div class="modal">
-<div class="modal-title">Create group</div>
-<div class="field"><label>Group name</label><input id="group-name" placeholder="engineering" type="text"/></div>
-<div class="field"><label>Group home base path (optional)</label><input id="group-home-path" placeholder="/directory" type="text"/></div>
-<div class="field"><label class="checkbox-label"><input id="group-home-auto" type="checkbox"/> Auto-generate member home as /base/&lt;username&gt;</label></div>
-<div class="field"><label>Storage max (optional)</label><div class="unit-input-row"><input id="group-storage-max" min="0" placeholder="Unlimited" step="0.01" type="number"/><select id="group-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="group-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doCreateGroup">Create</button></div>
+<div class="modal-title">Créer un groupe</div>
+<div class="field"><label>Nom du groupe</label><input id="group-name" placeholder="engineering" type="text"/></div>
+<div class="field"><label>Chemin de base optionnel</label><input id="group-home-path" placeholder="/directory" type="text"/></div>
+<div class="field"><label class="checkbox-label"><input id="group-home-auto" type="checkbox"/> Générer automatiquement /base/&lt;username&gt;</label></div>
+<div class="field"><label>Quota de stockage optionnel</label><div class="unit-input-row"><input id="group-storage-max" min="0" placeholder="Illimité" step="0.01" type="number"/><select id="group-storage-max-unit"><option value="MB">Mo</option><option selected="" value="GB">Go</option></select></div></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="group-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doCreateGroup">Créer</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="member-modal"><div class="modal">
 <div class="modal-title">Add member to <span id="member-group-name"></span></div>
-<div class="field"><label>User</label><select id="member-username"></select></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="member-modal">Cancel</button><button class="btn btn-primary btn-auto-width" data-action="doAddMember">Add</button></div>
+<div class="field"><label>Utilisateur</label><select id="member-username"></select></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="member-modal">Annuler</button><button class="btn btn-primary btn-auto-width" data-action="doAddMember">Ajouter</button></div>
 </div></div>
 <div class="modal-overlay hidden" id="delete-confirm-modal"><div class="modal">
-<div class="modal-title">Confirm delete</div>
+<div class="modal-title">Confirmation de suppression</div>
 <div class="field"><label>Action</label><div class="app-inline-7" id="delete-confirm-details"></div></div>
-<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="delete-confirm-modal">Cancel</button><button class="btn btn-danger btn-auto-width" data-action="doDeleteConfirm">Delete</button></div>
+<div class="modal-actions"><button class="btn btn-ghost" data-action="closeModal" data-arg1="delete-confirm-modal">Annuler</button><button class="btn btn-danger btn-auto-width" data-action="doDeleteConfirm">Supprimer</button></div>
 </div></div>
 <script defer="" src="/static/app.js"></script>
 </body>
