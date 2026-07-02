@@ -4,6 +4,31 @@ let lastFileEntries=[];
 const VIEW_KEY_PREFIX='kryoset:view:';
 const CSRF_COOKIE='kryoset_csrf';
 
+const THEME_KEY='kryoset:theme';
+
+function getPreferredTheme(){
+  const saved=localStorage.getItem(THEME_KEY);
+  if(saved==='dark'||saved==='light')return saved;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme){
+  const value=theme==='dark'?'dark':'light';
+  document.body.dataset.theme=value;
+  document.documentElement.dataset.theme=value;
+  document.querySelectorAll('.theme-toggle-label').forEach(el=>{el.textContent=value==='dark'?'Mode clair':'Mode sombre'});
+  document.querySelectorAll('.theme-toggle').forEach(el=>{el.setAttribute('aria-label',value==='dark'?'Activer le mode clair':'Activer le mode sombre');el.setAttribute('title',value==='dark'?'Mode clair':'Mode sombre')});
+}
+
+function toggleTheme(){
+  const next=(document.body.dataset.theme==='dark')?'light':'dark';
+  localStorage.setItem(THEME_KEY,next);
+  applyTheme(next);
+}
+
+applyTheme(getPreferredTheme());
+
+
 function escapeHtml(value){
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -922,6 +947,7 @@ function dispatchDataAction(el, event){
   switch(action){
     case 'showPanel': showPanel(arg1); break;
     case 'doLogout': doLogout(); break;
+    case 'toggleTheme': toggleTheme(); break;
     case 'reloadFiles': reloadFiles(); break;
     case 'applyFileSearch': applyFileSearch(); break;
     case 'setView': setView(arg1); break;
