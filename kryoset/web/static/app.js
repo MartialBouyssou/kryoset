@@ -1,5 +1,6 @@
 const API='';
 let currentUser=null,currentPath='',currentView='list',sortBy='name',sortDesc=false,renamingPath=null,memberTargetGroup=null,totpTargetUser=null,userStorageTarget=null;
+let lastFileEntries=[];
 const VIEW_KEY_PREFIX='kryoset:view:';
 const CSRF_COOKIE='kryoset_csrf';
 
@@ -218,20 +219,27 @@ function buildBreadcrumb(){
   const el=document.getElementById('breadcrumb');
   const pd=document.getElementById('path-display');
   const parts=currentPath?currentPath.split('/').filter(Boolean):[];
-  pd.textContent='/'+(currentPath||'');pd.title=pd.textContent;
-  let html='<span class="breadcrumb-part" data-action="navigateTo" data-path="">~</span>';
+  if(pd){
+    pd.textContent='Emplacement : /'+(currentPath||'');
+    pd.title='/'+(currentPath||'');
+  }
+  let html='<span class="breadcrumb-home" data-action="navigateTo" data-path=""><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg> Accueil</span>';
   let acc='';
   for(let i=0;i<parts.length;i++){
     acc+=(acc?'/':'')+parts[i];
     const path=acc;
-    html+='<span class="breadcrumb-sep">/</span>';
-    if(i===parts.length-1)html+='<span class="breadcrumb-current">'+escapeHtml(parts[i])+'</span>';
-    else html+='<span class="breadcrumb-part" data-action="navigateTo" data-path="'+escapeAttr(path)+'" title="'+escapeAttr(path)+'">'+escapeHtml(parts[i])+'</span>';
+    html+='<span class="breadcrumb-sep"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>';
+    if(i===parts.length-1)html+='<span class="breadcrumb-current" title="'+escapeAttr(path)+'">'+escapeHtml(parts[i])+'</span>';
+    else html+='<span class="breadcrumb-part" data-action="navigateTo" data-path="'+escapeAttr(path)+'" title="/'+escapeAttr(path)+'">'+escapeHtml(parts[i])+'</span>';
   }
   el.innerHTML=html;
 }
 
-function navigateTo(path){currentPath=path;reloadFiles()}
+function navigateTo(path){currentPath=path;const search=document.getElementById('file-search');if(search)search.value='';reloadFiles()}
+
+function applyFileSearch(){
+  renderFiles(lastFileEntries);
+}
 
 function getFileIcon(e){
   if(e.isParent)return'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
@@ -368,7 +376,9 @@ async function reloadFiles(){
   const sort=document.getElementById('sort-select')?.value||sortBy;sortBy=sort;
   const resp=await api('GET','/files/list?path='+encodeURIComponent(currentPath)+'&show_hidden='+showHidden+'&sort_by='+sort+'&sort_desc='+sortDesc);
   if(!resp.ok){const d=await resp.json().catch(()=>({}));toast(d.detail||'Impossible de lister le dossier','error');return}
-  const data=await resp.json();renderFiles(data.entries||[]);
+  const data=await resp.json();
+  lastFileEntries=data.entries||[];
+  renderFiles(lastFileEntries);
 }
 
 
@@ -416,11 +426,15 @@ function renderFiles(entries){
   const empty=document.getElementById('files-empty');
   const tbody=document.getElementById('file-list');
   const grid=document.getElementById('file-grid');
+  const query=(document.getElementById('file-search')?.value||'').trim().toLowerCase();
+  const filtered=query?entries.filter(e=>String(e.name||'').toLowerCase().includes(query)):entries;
   const parentRow=currentPath?[{name:'..',type:'directory',size:null,modified:null,previewable:false,isParent:true}]:[];
-  const all=[...parentRow,...entries];
-  setVisible(empty, entries.length===0);
+  const all=[...parentRow,...filtered];
+  const summary=document.getElementById('folder-summary');
+  if(summary)summary.textContent=(query?filtered.length+' résultat(s)':'')+(query?' · ':'')+entries.length+' élément(s) dans ce dossier';
+  setVisible(empty, filtered.length===0);
   tbody.innerHTML='';grid.innerHTML='';
-  const firstSelectable=entries[0];
+  const firstSelectable=filtered[0];
   if(firstSelectable){
     const firstPath=currentPath?currentPath+'/'+firstSelectable.name:firstSelectable.name;
     renderFileDetails(firstSelectable, firstPath);
@@ -441,14 +455,22 @@ function renderFiles(entries){
       '<span class="file-name-text">'+escapeHtml(entry.name)+'</span></div></td>'+ 
       '<td class="file-size">'+formatSize(entry.size)+'</td>'+ 
       '<td class="file-date">'+formatDate(entry.modified)+'</td>'+ 
-      '<td>'+(entry.isParent?'':'<div class="row-actions">'+
-      ((!isDir&&entry.previewable)?'<button class="btn btn-ghost btn-sm" data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'" title="Aperçu">'+ICON_EYE+'</button>':'')+
-      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="downloadFile" data-path="'+attrPath+'" title="Télécharger">'+ICON_DOWNLOAD+'</button>':'')+
-      (!isDir?'<button class="btn btn-ghost btn-sm" data-action="promptShare" data-path="'+attrPath+'" title="Partager">'+ICON_SHARE+'</button>':'')+
-      '<button class="btn btn-ghost btn-sm" data-action="promptRename" data-path="'+attrPath+'" title="Renommer">'+ICON_EDIT+'</button>'+ 
-      '<button class="btn btn-danger btn-sm" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'" title="Supprimer">'+ICON_TRASH+'</button>'+ 
-      '</div>')+'</td>';
-    tr.addEventListener('click',()=>{ if(!entry.isParent)renderFileDetails(entry,entryPath); });
+      '<td>'+(entry.isParent?'':'<details class="row-menu"><summary aria-label="Actions">•••</summary><div class="row-menu-popover">'+
+      ((!isDir&&entry.previewable)?'<button data-action="previewFile" data-path="'+attrPath+'" data-name="'+attrName+'">'+ICON_EYE+' Aperçu</button>':'')+
+      (!isDir?'<button data-action="downloadFile" data-path="'+attrPath+'">'+ICON_DOWNLOAD+' Télécharger</button>':'')+
+      (!isDir?'<button data-action="promptShare" data-path="'+attrPath+'">'+ICON_SHARE+' Partager</button>':'')+
+      '<button data-action="promptRename" data-path="'+attrPath+'">'+ICON_EDIT+' Renommer</button>'+ 
+      '<button class="danger" data-action="showDeleteConfirm" data-path="'+attrPath+'" data-is-dir="'+String(isDir)+'">'+ICON_TRASH+' Supprimer</button>'+ 
+      '</div></details>')+'</td>';
+    if(firstSelectable===entry)tr.classList.add('is-selected');
+    tr.addEventListener('click',event=>{
+      if(event.target.closest('.row-menu'))return;
+      if(!entry.isParent){
+        document.querySelectorAll('.file-table tr.is-selected').forEach(row=>row.classList.remove('is-selected'));
+        tr.classList.add('is-selected');
+        renderFileDetails(entry,entryPath);
+      }
+    });
     tbody.appendChild(tr);
 
     const div=document.createElement('div');
@@ -871,6 +893,7 @@ function closeModal(id){
 }
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.add('hidden')}));
 document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){const search=document.getElementById('file-search');if(search&&!document.getElementById('app').classList.contains('hidden')){e.preventDefault();search.focus();search.select();}}
   if(e.key==='Escape')document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.add('hidden'));
   if(e.key==='Enter'&&!document.getElementById('login-screen').classList.contains('hidden')){
     if(!isHidden(document.getElementById('totp-form')))doTOTP();else doLogin();
@@ -900,6 +923,7 @@ function dispatchDataAction(el, event){
     case 'showPanel': showPanel(arg1); break;
     case 'doLogout': doLogout(); break;
     case 'reloadFiles': reloadFiles(); break;
+    case 'applyFileSearch': applyFileSearch(); break;
     case 'setView': setView(arg1); break;
     case 'handleUpload': handleUpload(el.files); break;
     case 'showMkdirModal': showMkdirModal(); break;
@@ -966,6 +990,15 @@ document.addEventListener('click', event=>{
 });
 
 document.addEventListener('change', event=>{
+  const el=event.target.closest('[data-action]');
+  if(!el)return;
+  if(dispatchDataAction(el,event)){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+
+document.addEventListener('input', event=>{
   const el=event.target.closest('[data-action]');
   if(!el)return;
   if(dispatchDataAction(el,event)){
