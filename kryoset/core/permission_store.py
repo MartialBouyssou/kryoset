@@ -1,4 +1,5 @@
 import json
+import os
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -76,6 +77,20 @@ class PermissionStoreError(Exception):
     """Raised when a permission store operation fails."""
 
 
+def _normalize_share_path(path: str) -> str:
+    raw = str(path or "").strip()
+    if not raw:
+        raise PermissionStoreError("Share path cannot be empty.")
+    parts: list[str] = []
+    for part in raw.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            raise PermissionStoreError("Share path traversal is not allowed.")
+        parts.append(part)
+    return "/" + "/".join(parts)
+
+
 class PermissionStore:
     """
     SQLite-backed store for permission rules, groups and share links.
@@ -93,6 +108,10 @@ class PermissionStore:
     def initialize(self) -> None:
         """Create the database file and apply the schema if needed."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self._db_path.parent, 0o700)
+        except OSError:
+            pass
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
             # Lightweight migration for existing databases created before group-home fields.
@@ -106,6 +125,10 @@ class PermissionStore:
                 connection.execute(
                     "ALTER TABLE groups ADD COLUMN home_auto_user_subdir INTEGER NOT NULL DEFAULT 0"
                 )
+        try:
+            os.chmod(self._db_path, 0o600)
+        except OSError:
+            pass
 
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -197,6 +220,26 @@ class PermissionStore:
             cursor = conn.execute("DELETE FROM groups WHERE name = ?", (group_name,))
             if cursor.rowcount == 0:
                 raise PermissionStoreError(f"Group '{group_name}' does not exist.")
+            conn.execute(
+                "DELETE FROM permission_rules WHERE subject_type = 'group' AND subject_id = ?",
+                (group_name,),
+            )
+
+    def delete_user_data(self, username: str) -> None:
+        """Remove ACL/share metadata that belongs to a deleted user.
+
+        This prevents both privacy leakage and privilege resurrection if the
+        same username is recreated later. Audit logs are kept under the normal
+        log-retention policy.
+        """
+        with self._connect() as conn:
+            conn.execute("DELETE FROM group_members WHERE username = ?", (username,))
+            conn.execute(
+                "DELETE FROM permission_rules WHERE subject_type = 'user' AND subject_id = ?",
+                (username,),
+            )
+            conn.execute("DELETE FROM upload_usage WHERE username = ?", (username,))
+            conn.execute("DELETE FROM share_links WHERE created_by = ?", (username,))
 
     def list_groups(self) -> list[dict]:
         """Return all groups with their member lists."""
@@ -267,16 +310,6 @@ class PermissionStore:
                     "INSERT INTO group_members (group_name, username) VALUES (?, ?)",
                     (group_name, username),
                 )
-
-                group_rules = conn.execute(
-                    """
-                    SELECT * FROM permission_rules
-                    WHERE subject_type = 'group' AND subject_id = ?
-                    """,
-                    (group_name,),
-                ).fetchall()
-                for row in group_rules:
-                    self._upsert_user_rule_from_group(conn, username, self._rule_from_row(row))
 
                 # Create the user home directory on disk if the group uses
                 # automatic per-user subdirectories.
@@ -372,14 +405,6 @@ class PermissionStore:
             )
             rule_id = cursor.lastrowid
 
-            if rule.subject_type == "group":
-                members = conn.execute(
-                    "SELECT username FROM group_members WHERE group_name = ?",
-                    (rule.subject_id,),
-                ).fetchall()
-                for member in members:
-                    self._upsert_user_rule_from_group(conn, member["username"], rule)
-
             return rule_id
 
     def _upsert_user_rule_from_group(
@@ -391,9 +416,9 @@ class PermissionStore:
         """
         Merge a group's rule into the user's direct rules on the same path.
 
-        This materializes group permissions onto users so the user keeps the
-        same permissions as the group by default, while still allowing
-        user-specific edits later.
+        Legacy helper kept only for older callers/tests. New group permissions
+        are resolved dynamically through group membership and are not copied
+        into direct user rules.
         """
         existing = conn.execute(
             """
@@ -438,6 +463,16 @@ class PermissionStore:
             "UPDATE permission_rules SET permissions = ? WHERE rule_id = ?",
             (json.dumps(merged_permissions.to_names()), existing_rule.rule_id),
         )
+
+
+    def get_rule(self, rule_id: int) -> Optional[PermissionRule]:
+        """Return a permission rule by ID, or None if it does not exist."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM permission_rules WHERE rule_id = ?",
+                (rule_id,),
+            ).fetchone()
+            return self._rule_from_row(row) if row else None
 
     def remove_rule(self, rule_id: int) -> None:
         """
@@ -673,9 +708,15 @@ class PermissionStore:
         Returns:
             The newly created :class:`ShareLink` with its token and ID.
         """
+        path = _normalize_share_path(path)
+        if download_limit is not None and download_limit < 1:
+            raise PermissionStoreError("download_limit must be greater than zero.")
+
         token = secrets.token_urlsafe(32)
         password_hash = None
         if password:
+            if len(password) < 8:
+                raise PermissionStoreError("Share password must be at least 8 characters long.")
             password_hash = bcrypt.hashpw(
                 password.encode("utf-8"), bcrypt.gensalt()
             ).decode("utf-8")
@@ -756,6 +797,40 @@ class PermissionStore:
             )
             if cursor.rowcount == 0:
                 raise PermissionStoreError(f"Share link '{token}' not found.")
+
+
+    def reserve_share_download(self, token: str) -> ShareLink:
+        """
+        Atomically reserve one download slot and return the updated share link.
+
+        This prevents parallel requests from exceeding a link's download_limit.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM share_links WHERE token = ?",
+                (token,),
+            ).fetchone()
+            if row is None:
+                raise PermissionStoreError(f"Share link '{token}' not found.")
+            link = self._share_from_row(row)
+            if not link.is_valid():
+                raise PermissionStoreError("Share link is expired or download limit has been reached.")
+            cursor = conn.execute(
+                """
+                UPDATE share_links
+                SET download_count = download_count + 1
+                WHERE token = ?
+                  AND (download_limit IS NULL OR download_count < download_limit)
+                """,
+                (token,),
+            )
+            if cursor.rowcount == 0:
+                raise PermissionStoreError("Share link download limit has been reached.")
+            row = conn.execute(
+                "SELECT * FROM share_links WHERE token = ?",
+                (token,),
+            ).fetchone()
+            return self._share_from_row(row)
 
     def increment_share_download(self, token: str) -> None:
         """

@@ -1,5 +1,6 @@
 import pytest
 
+from kryoset.core.configuration import Configuration
 from kryoset.core.user_manager import UserError, UserManager
 
 
@@ -118,6 +119,24 @@ class TestGenerateTemporaryPassword:
     ):
         new_password = user_manager_with_alice.generate_temporary_password("alice")
         assert user_manager_with_alice.authenticate("alice", new_password)
+
+    def test_generated_password_is_seen_by_running_manager_without_restart(
+        self, config_path, temp_storage
+    ):
+        writer_cfg = Configuration(config_path)
+        writer_cfg.initialize(storage_path=str(temp_storage), port=2222)
+        writer = UserManager(writer_cfg)
+        writer.add_user("alice", "oldpassword1")
+
+        running_cfg = Configuration(config_path)
+        running_cfg.load()
+        running = UserManager(running_cfg)
+        assert running.authenticate("alice", "oldpassword1")
+
+        temporary_password = writer.generate_temporary_password("alice")
+
+        assert not running.authenticate("alice", "oldpassword1")
+        assert running.authenticate("alice", temporary_password)
 
     def test_generated_password_is_at_least_8_chars(
         self, user_manager_with_alice: UserManager

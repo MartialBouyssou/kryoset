@@ -4,6 +4,8 @@ from typing import Optional
 
 import bcrypt
 
+_DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"kryoset-dummy-password", bcrypt.gensalt())
+
 from kryoset.core.configuration import Configuration
 from kryoset.core.home_paths import normalize_home_path
 
@@ -28,10 +30,38 @@ class UserManager:
         self._configuration = configuration
 
     def _get_users(self) -> dict:
+        # Pick up user changes made by another Kryoset process without requiring
+        # the running SFTP/API process to restart.
+        if hasattr(self._configuration, "reload_if_changed"):
+            self._configuration.reload_if_changed()
         return dict(self._configuration.users)
 
     def _save_users(self, users: dict) -> None:
         self._configuration.set_users(users)
+
+    @staticmethod
+    def _validate_username(username: str) -> None:
+        if not username or len(username) > 64 or not username.replace("_", "").isalnum():
+            raise UserError(
+                f"Invalid username '{username}'. "
+                "Use 1-64 letters, digits or underscores."
+            )
+
+    def user_exists(self, username: str) -> bool:
+        return username in self._get_users()
+
+    def is_enabled(self, username: str) -> bool:
+        return self._get_users().get(username, {}).get("enabled", False)
+
+    def get_token_version(self, username: str) -> int:
+        return int(self._get_users().get(username, {}).get("token_version", 0))
+
+    def bump_token_version(self, username: str) -> None:
+        users = self._get_users()
+        if username not in users:
+            raise UserError(f"User '{username}' does not exist.")
+        users[username]["token_version"] = int(users[username].get("token_version", 0)) + 1
+        self._save_users(users)
 
     def add_user(self, username: str, password: str, home_path: Optional[str] = None) -> None:
         """
@@ -46,11 +76,7 @@ class UserManager:
             UserError: If the username already exists, is invalid, or the
                 password is too short.
         """
-        if not username or not username.replace("_", "").isalnum():
-            raise UserError(
-                f"Invalid username '{username}'. "
-                "Use only letters, digits and underscores."
-            )
+        self._validate_username(username)
         if len(password) < 8:
             raise UserError("Password must be at least 8 characters long.")
 
@@ -65,6 +91,7 @@ class UserManager:
         users[username] = {
             "password_hash": password_hash,
             "enabled": True,
+            "token_version": 0,
         }
         if home_path is not None:
             normalized = normalize_home_path(home_path)
@@ -111,8 +138,9 @@ class UserManager:
         users = self._get_users()
         user_record = users.get(username)
         if user_record is None:
-            # Perform a dummy hash to prevent timing attacks.
-            bcrypt.checkpw(b"dummy", bcrypt.hashpw(b"dummy", bcrypt.gensalt()))
+            # Perform a fixed-cost dummy verification to reduce username timing
+            # leaks without generating a new bcrypt salt on every failed login.
+            bcrypt.checkpw(password.encode("utf-8"), _DUMMY_PASSWORD_HASH)
             return False
         if not user_record.get("enabled", True):
             return False
@@ -134,6 +162,8 @@ class UserManager:
         if username not in users:
             raise UserError(f"User '{username}' does not exist.")
         users[username]["enabled"] = enabled
+        if not enabled:
+            users[username]["token_version"] = int(users[username].get("token_version", 0)) + 1
         self._save_users(users)
 
     def change_password(self, username: str, new_password: str) -> None:
@@ -156,6 +186,7 @@ class UserManager:
             new_password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
         users[username]["password_hash"] = password_hash
+        users[username]["token_version"] = int(users[username].get("token_version", 0)) + 1
         self._save_users(users)
 
     def list_users(self) -> list[dict]:
@@ -229,4 +260,5 @@ class UserManager:
                 f"User '{username}' must enable TOTP (A2F) before admin role can be granted."
             )
         users[username]["admin"] = admin
+        users[username]["token_version"] = int(users[username].get("token_version", 0)) + 1
         self._save_users(users)

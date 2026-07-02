@@ -206,7 +206,8 @@ def test_add_rule_with_manage_perms(client, user_token, permission_store):
         subject_type="user",
         subject_id="alice",
         path="/",
-        permissions=Permission.MANAGE_PERMS,
+        permissions=Permission.MANAGE_PERMS | Permission.LIST,
+        can_delegate=True,
     )
     permission_store.add_rule(rule)
     resp = client.post(

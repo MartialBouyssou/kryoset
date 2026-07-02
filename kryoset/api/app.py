@@ -4,6 +4,9 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from kryoset.api.security import SecurityHeadersMiddleware, parse_csv_env
 
 from kryoset.core.audit_logger import AuditLogger
 from kryoset.core.configuration import Configuration
@@ -67,13 +70,25 @@ def create_app(
     signal.signal(signal.SIGTERM, _on_shutdown)
     signal.signal(signal.SIGINT, _on_shutdown)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    allowed_hosts = parse_csv_env(
+        "KRYOSET_ALLOWED_HOSTS",
+        ["localhost", "127.0.0.1", "::1", "testserver"],
     )
+    if allowed_hosts and "*" not in allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
+    cors_origins = parse_csv_env("KRYOSET_CORS_ORIGINS", [])
+    if cors_origins:
+        wildcard_cors = "*" in cors_origins
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=not wildcard_cors,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
 
     from kryoset.api.routes import auth, files, logs, permissions, shares, storage, users, web
 

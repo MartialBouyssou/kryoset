@@ -1,0 +1,16 @@
+rules:
+  - id: kryoset-no-browser-token-storage
+    message: Do not store auth tokens in browser localStorage/sessionStorage; use HttpOnly cookies plus CSRF.
+    severity: ERROR
+    languages: [javascript]
+    pattern-either:
+      - pattern-regex: "(localStorage|sessionStorage)\\.setItem\\([^)]*(token|session|auth|jwt)"
+      - pattern-regex: "(localStorage|sessionStorage)\\[['\"](token|session|auth|jwt)[^'\"]*['\"]\\]\\s*="
+
+  - id: kryoset-no-unsafe-inline-csp
+    message: CSP must not allow unsafe-inline for script-src or style-src.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern-regex: "script-src[^\n;]*'unsafe-inline'"
+      - pattern-regex: "style-src[^\n;]*'unsafe-inline'"

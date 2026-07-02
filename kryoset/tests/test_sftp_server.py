@@ -104,7 +104,7 @@ class TestPathResolution:
     ):
         interface = _make_interface(temp_storage, mock_audit_logger, open_store)
         resolved = interface._resolve("/../../etc/passwd")
-        assert str(resolved).startswith(str(temp_storage.resolve()))
+        assert resolved is None
 
     def test_canonicalize_root(
         self, temp_storage: Path, mock_audit_logger: AuditLogger, open_store: PermissionStore

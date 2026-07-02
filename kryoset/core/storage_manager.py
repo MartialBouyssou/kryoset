@@ -54,7 +54,13 @@ class StorageManager:
         return f"{b:.1f} TB"
 
 
+    def _reload_config(self) -> None:
+        reload = getattr(self._configuration, "reload_if_changed", None)
+        if reload is not None:
+            reload()
+
     def _get_raw(self) -> dict[str, Any]:
+        self._reload_config()
         return dict(self._configuration._data)
 
     def _save_field(self, key: str, value: Any) -> None:
@@ -62,6 +68,7 @@ class StorageManager:
         self._configuration.save()
 
     def _allocations(self) -> dict[str, int]:
+        self._reload_config()
         return dict(self._configuration._data.get("storage_allocations", {}))
 
     def _save_allocations(self, alloc: dict[str, int]) -> None:
@@ -70,6 +77,7 @@ class StorageManager:
 
     def get_global_max(self) -> Optional[int]:
         """Return the global NAS storage budget in bytes, or None if unlimited."""
+        self._reload_config()
         return self._configuration._data.get("storage_max_bytes")
 
     def set_global_max(self, max_bytes: Optional[int]) -> None:

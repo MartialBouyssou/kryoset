@@ -48,8 +48,21 @@ def test_me_endpoint(client, admin_token):
     assert data["initial_path"] == "/"
     assert "quota_bytes" in data
     assert "used_bytes" in data
+    assert "usage_stale" in data
     assert "recent_logins" in data
     assert "recent_failures" in data
+
+
+def test_me_endpoint_does_not_force_quota_scan(client, admin_token, monkeypatch):
+    def fail_scan(*_args, **_kwargs):
+        raise AssertionError("/auth/me must not scan storage usage")
+
+    monkeypatch.setattr(client.app.state.quota_manager, "get_used_bytes", fail_scan)
+    monkeypatch.setattr(client.app.state.quota_manager, "refresh_used_bytes", fail_scan)
+
+    resp = client.get("/auth/me", headers=auth_header(admin_token))
+    assert resp.status_code == 200
+    assert resp.json()["usage_stale"] is True
 
 
 def test_me_endpoint_returns_user_home_as_initial_path(client, user_token, user_manager):
@@ -135,9 +148,10 @@ def test_totp_two_step_flow(client, user_manager):
     data = resp.json()
     assert data.get("totp_required") is True
     assert "access_token" not in data
+    assert "totp_token" in data
 
     code = pyotp.TOTP(secret).now()
-    resp2 = client.post("/auth/totp", json={"username": "totpuser", "code": code})
+    resp2 = client.post("/auth/totp", json={"username": "totpuser", "code": code, "totp_token": data["totp_token"]})
     assert resp2.status_code == 200
     assert "access_token" in resp2.json()
 
@@ -149,8 +163,8 @@ def test_totp_invalid_code_rejected(client, user_manager):
     secret = totp_mgr.generate_secret("totpuser2")
     totp_mgr.confirm_setup("totpuser2", pyotp.TOTP(secret).now())
 
-    client.post("/auth/login", json={"username": "totpuser2", "password": "totppass2"})
-    resp = client.post("/auth/totp", json={"username": "totpuser2", "code": "000000"})
+    login = client.post("/auth/login", json={"username": "totpuser2", "password": "totppass2"})
+    resp = client.post("/auth/totp", json={"username": "totpuser2", "code": "000000", "totp_token": login.json()["totp_token"]})
     assert resp.status_code == 401
 
 
@@ -165,15 +179,62 @@ def test_totp_retry_after_invalid_code_succeeds(client, user_manager):
     assert login.status_code == 200
     assert login.json().get("totp_required") is True
 
-    wrong = client.post("/auth/totp", json={"username": "totpuser3", "code": "000000"})
+    pending_token = login.json()["totp_token"]
+    wrong = client.post("/auth/totp", json={"username": "totpuser3", "code": "000000", "totp_token": pending_token})
     assert wrong.status_code == 401
 
     correct_code = pyotp.TOTP(secret).now()
-    retry = client.post("/auth/totp", json={"username": "totpuser3", "code": correct_code})
+    retry = client.post("/auth/totp", json={"username": "totpuser3", "code": correct_code, "totp_token": pending_token})
     assert retry.status_code == 200
     assert "access_token" in retry.json()
 
 
 def test_totp_without_pending_session_rejected(client):
-    resp = client.post("/auth/totp", json={"username": "ghost", "code": "123456"})
+    resp = client.post("/auth/totp", json={"username": "ghost", "code": "123456", "totp_token": "missing"})
     assert resp.status_code == 400
+
+
+def test_login_sets_httponly_auth_cookies(client, admin_user):
+    resp = client.post("/auth/login", json={"username": "admin", "password": "adminpass1"})
+    assert resp.status_code == 200
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "kryoset_access=" in set_cookie
+    assert "kryoset_refresh=" in set_cookie
+    assert "kryoset_csrf=" in set_cookie
+    assert "kryoset_access=" in set_cookie and "HttpOnly" in set_cookie
+    assert resp.cookies.get("kryoset_csrf")
+
+
+def test_cookie_session_get_works_without_authorization_header(client, admin_user):
+    login = client.post("/auth/login", json={"username": "admin", "password": "adminpass1"})
+    assert login.status_code == 200
+    resp = client.get("/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "admin"
+
+
+def test_cookie_session_unsafe_method_requires_csrf(client, admin_user):
+    login = client.post("/auth/login", json={"username": "admin", "password": "adminpass1"})
+    assert login.status_code == 200
+    no_csrf = client.post("/users/admin/password", json={"new_password": "newpass123"})
+    assert no_csrf.status_code == 403
+
+    csrf = client.cookies.get("kryoset_csrf")
+    with_csrf = client.post(
+        "/users/admin/password",
+        json={"new_password": "newpass123"},
+        headers={"X-Kryoset-CSRF": csrf},
+    )
+    assert with_csrf.status_code == 200
+
+
+def test_refresh_with_cookie_requires_csrf(client, admin_user):
+    login = client.post("/auth/login", json={"username": "admin", "password": "adminpass1"})
+    assert login.status_code == 200
+    no_csrf = client.post("/auth/refresh")
+    assert no_csrf.status_code == 403
+
+    csrf = client.cookies.get("kryoset_csrf")
+    with_csrf = client.post("/auth/refresh", headers={"X-Kryoset-CSRF": csrf})
+    assert with_csrf.status_code == 200
+    assert client.cookies.get("kryoset_csrf")

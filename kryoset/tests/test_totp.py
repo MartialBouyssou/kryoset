@@ -183,6 +183,30 @@ class TestServerInterfaceTOTP:
         result = server.check_auth_password("alice", "securepassword1")
         assert result == paramiko.AUTH_PARTIALLY_SUCCESSFUL
 
+    def test_keyboard_interactive_returns_totp_challenge(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        server.check_auth_password("alice", "securepassword1")
+
+        challenge = server.check_auth_interactive("alice", "")
+        assert isinstance(challenge, paramiko.InteractiveQuery)
+        assert challenge.prompts == [("TOTP code (6 digits): ", False)]
+
+    def test_keyboard_interactive_without_password_is_rejected(self, user_manager, tmp_path):
+        import paramiko, pyotp
+        totp_mgr = TOTPManager(user_manager)
+        secret = totp_mgr.generate_secret("alice")
+        code = pyotp.TOTP(secret).now()
+        totp_mgr.confirm_setup("alice", code)
+
+        server = self._make_server_interface(user_manager, tmp_path)
+        assert server.check_auth_interactive("alice", "") == paramiko.AUTH_FAILED
+
     def test_get_allowed_auths_no_totp(self, user_manager, tmp_path):
         server = self._make_server_interface(user_manager, tmp_path)
         assert server.get_allowed_auths("alice") == "password"
@@ -246,3 +270,34 @@ class TestServerInterfaceTOTP:
         prompt_text, echo = prompts[0]
         assert "TOTP" in prompt_text or "code" in prompt_text.lower()
         assert echo is False
+
+
+def test_regenerating_pending_secret_keeps_active_totp(totp_manager, user_manager):
+    secret = totp_manager.generate_secret("alice")
+    totp_manager.confirm_setup("alice", pyotp.TOTP(secret).now())
+    assert totp_manager.is_enabled("alice")
+
+    pending = totp_manager.generate_secret("alice")
+
+    users = user_manager._get_users()
+    assert users["alice"]["totp_secret"] == secret
+    assert users["alice"]["totp_secret_pending"] == pending
+    assert users["alice"]["totp_enabled"] is True
+
+
+def test_verify_fails_closed_when_enabled_without_secret(totp_manager, user_manager):
+    users = user_manager._get_users()
+    users["alice"]["totp_enabled"] = True
+    users["alice"].pop("totp_secret", None)
+    user_manager._save_users(users)
+
+    assert not totp_manager.verify("alice", "123456")
+
+
+def test_totp_code_cannot_be_reused(totp_manager):
+    secret = totp_manager.generate_secret("alice")
+    totp_manager.confirm_setup("alice", pyotp.TOTP(secret).now())
+    code = pyotp.TOTP(secret).now()
+
+    assert totp_manager.verify("alice", code)
+    assert not totp_manager.verify("alice", code)

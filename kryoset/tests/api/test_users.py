@@ -247,3 +247,36 @@ def test_set_quota_requires_admin(client, user_token):
         json={"quota_bytes": 1073741824},
     )
     assert resp.status_code == 403
+
+
+def test_delete_user_removes_permission_metadata(client, admin_token, regular_user, permission_store, config):
+    from kryoset.core.permissions import Permission, PermissionRule
+    permission_store.create_group("team")
+    permission_store.add_group_member("team", "alice")
+    rule_id = permission_store.add_rule(PermissionRule("user", "alice", "/secret", Permission.DOWNLOAD))
+    share = permission_store.create_share_link("alice", "/secret/file.txt", Permission.DOWNLOAD)
+
+    resp = client.delete("/users/alice", headers=auth_header(admin_token))
+
+    assert resp.status_code == 200
+    assert permission_store.get_user_groups("alice") == []
+    assert permission_store.get_rule(rule_id) is None
+    assert permission_store.get_share_link(share.token) is None
+
+
+def test_export_user_data_omits_secrets(client, user_token, permission_store, config):
+    from kryoset.core.permissions import Permission, PermissionRule
+    permission_store.add_rule(PermissionRule("user", "alice", "/home/alice", Permission.DOWNLOAD))
+    permission_store.create_share_link("alice", "/home/alice/file.txt", Permission.DOWNLOAD, password="strongpass")
+
+    resp = client.get("/users/alice/export", headers=auth_header(user_token))
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["username"] == "alice"
+    serialized = str(data).lower()
+    assert "password_hash" not in serialized
+    assert "totp_secret" not in serialized
+    assert "strongpass" not in serialized
+    assert "token" not in data["share_links"][0]
+    assert data["share_links"][0]["password_protected"] is True

@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -11,10 +11,30 @@ router = APIRouter(tags=["web"])
 _STATIC = Path(__file__).parent.parent.parent / "web" / "static"
 
 
+@router.get("/static/{filename:path}")
+def static_asset(filename: str) -> FileResponse:
+    """Serve bundled static assets with path traversal protection."""
+    static_root = _STATIC.resolve()
+    target = (_STATIC / filename).resolve()
+    try:
+        target.relative_to(static_root)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Static asset not found.")
+    if not target.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Static asset not found.")
+    return FileResponse(target)
+
+
 @router.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     """Serve the main application SPA."""
     return HTMLResponse((_STATIC / "app.html").read_text(encoding="utf-8"))
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy_page() -> HTMLResponse:
+    """Serve the GDPR/privacy information page."""
+    return HTMLResponse((_STATIC / "privacy.html").read_text(encoding="utf-8"))
 
 
 @router.get("/share/{token}", response_class=HTMLResponse)
@@ -47,9 +67,10 @@ def share_info(token: str, request: Request) -> dict:
         )
 
     return {
-        "token": link.token,
-        "path": link.path,
-        "permissions": link.permissions.to_names(),
+        # Do not expose the full internal storage path on public pages. The
+        # token already identifies the file; only the display filename is
+        # needed before download.
+        "filename": PurePosixPath(link.path).name or "download",
         "expires_at": link.expires_at.isoformat() if link.expires_at else None,
         "download_limit": link.download_limit,
         "download_count": link.download_count,

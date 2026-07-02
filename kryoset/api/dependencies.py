@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from jwt import InvalidTokenError as JWTError
 
 from kryoset.api.auth import decode_token
 from kryoset.core.home_paths import is_within_home, resolve_user_home_roots
@@ -11,8 +11,14 @@ from kryoset.core.permissions import Permission, PRESET_OWNER
 
 _bearer = HTTPBearer(auto_error=False)
 
+ACCESS_COOKIE_NAME = "kryoset_access"
+CSRF_COOKIE_NAME = "kryoset_csrf"
+CSRF_HEADER_NAME = "X-Kryoset-CSRF"
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
 
 def _resolve_token(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> dict:
     """
@@ -21,22 +27,45 @@ def _resolve_token(
     Raises:
         HTTPException 401: If the token is missing or invalid.
     """
-    if credentials is None:
+    token = credentials.credentials if credentials is not None else request.cookies.get(ACCESS_COOKIE_NAME)
+    token_from_cookie = credentials is None and bool(token)
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization token.",
         )
+    if token_from_cookie and request.method.upper() in _UNSAFE_METHODS:
+        cookie_csrf = request.cookies.get(CSRF_COOKIE_NAME)
+        header_csrf = request.headers.get(CSRF_HEADER_NAME)
+        if not cookie_csrf or not header_csrf or cookie_csrf != header_csrf:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Missing or invalid CSRF token.",
+            )
     try:
-        payload = decode_token(credentials.credentials)
-    except JWTError as error:
+        payload = decode_token(token)
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(error),
+            detail="Invalid or expired token.",
         )
     if payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Expected an access token.",
+        )
+
+    username = payload.get("sub")
+    user_manager = request.app.state.user_manager
+    if not username or not user_manager.user_exists(username) or not user_manager.is_enabled(username):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is disabled or no longer exists.",
+        )
+    if int(payload.get("ver", 0)) != user_manager.get_token_version(username):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session is no longer valid.",
         )
     return payload
 
@@ -136,8 +165,13 @@ def check_path_permission(
             detail="Permission store not configured.",
         )
 
-    effective, _ = permission_store.resolve_permissions(username, normalized_path)
-    if not (effective & required):
+    effective, password_hash = permission_store.resolve_permissions(username, normalized_path)
+    if password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Path password required. Password-protected ACLs are not exposed through this endpoint.",
+        )
+    if (effective & required) != required:
         required_names = required.to_names() or ["NONE"]
         effective_names = effective.to_names() or ["NONE"]
         raise HTTPException(

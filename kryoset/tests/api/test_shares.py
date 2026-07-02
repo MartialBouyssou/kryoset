@@ -140,14 +140,14 @@ def test_public_download_with_password(client, admin_token, config):
     create = client.post(
         "/shares/",
         headers=auth_header(admin_token),
-        json={"path": "protected.txt", "permissions": ["DOWNLOAD"], "password": "mypass"},
+        json={"path": "protected.txt", "permissions": ["DOWNLOAD"], "password": "mystrongpass"},
     )
     token = create.json()["token"]
     resp_no_pass = client.get(f"/shares/public/{token}")
     assert resp_no_pass.status_code == 401
-    resp_wrong = client.get(f"/shares/public/{token}?password=wrong")
+    resp_wrong = client.get(f"/shares/public/{token}?password=wrongpass")
     assert resp_wrong.status_code == 401
-    resp_ok = client.get(f"/shares/public/{token}?password=mypass")
+    resp_ok = client.get(f"/shares/public/{token}?password=mystrongpass")
     assert resp_ok.status_code == 200
 
 
@@ -159,3 +159,46 @@ def test_public_download_token_not_found(client):
 def test_revoke_not_found(client, admin_token):
     resp = client.delete("/shares/ghosttoken", headers=auth_header(admin_token))
     assert resp.status_code == 404
+
+
+def test_public_share_info_does_not_expose_internal_path(client, admin_token, config):
+    nested = config.storage_path / "private" / "folder"
+    nested.mkdir(parents=True)
+    (nested / "report.txt").write_text("secret")
+    create = client.post(
+        "/shares/",
+        headers=auth_header(admin_token),
+        json={"path": "private/folder/report.txt", "permissions": ["DOWNLOAD"]},
+    )
+    token = create.json()["token"]
+
+    info = client.get(f"/api/shares/info/{token}")
+
+    assert info.status_code == 200
+    data = info.json()
+    assert data["filename"] == "report.txt"
+    assert "path" not in data
+    assert "token" not in data
+    assert "permissions" not in data
+
+
+def test_create_share_rejects_weak_password(client, admin_token, config):
+    (config.storage_path / "protected-weak.txt").write_text("secret")
+
+    resp = client.post(
+        "/shares/",
+        headers=auth_header(admin_token),
+        json={"path": "protected-weak.txt", "permissions": ["DOWNLOAD"], "password": "short"},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_create_share_rejects_traversal_path(client, admin_token):
+    resp = client.post(
+        "/shares/",
+        headers=auth_header(admin_token),
+        json={"path": "../secret.txt", "permissions": ["DOWNLOAD"]},
+    )
+
+    assert resp.status_code == 400

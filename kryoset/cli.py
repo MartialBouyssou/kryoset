@@ -29,6 +29,7 @@ from kryoset import __version__
 from kryoset.core.configuration import Configuration, ConfigurationError
 from kryoset.core.sftp_server import SFTPServer
 from kryoset.core.user_manager import UserError, UserManager
+from kryoset.core.timezone import now_utc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -220,6 +221,19 @@ def user_remove(username: str, config: str | None) -> None:
     user_manager = UserManager(configuration)
     try:
         user_manager.remove_user(username)
+        try:
+            from kryoset.core.permission_store import PermissionStore
+            store = PermissionStore()
+            store.initialize()
+            if hasattr(store, "delete_user_data"):
+                store.delete_user_data(username)
+        except Exception:
+            pass
+        try:
+            from kryoset.core.storage_manager import StorageManager
+            StorageManager(configuration, user_manager).set_allocation(f"user:{username}", None)
+        except Exception:
+            pass
         click.echo(f"[ok] User '{username}' removed.")
     except UserError as error:
         click.echo(f"[error] {error}", err=True)
@@ -318,6 +332,169 @@ def user_set_max_storage(username: str, size: str, config: str | None) -> None:
     _set_user_storage_quota(username, size, config)
 
 
+
+@user.command("export")
+@click.argument("username")
+@click.option("--output", "output_path", default=None, type=click.Path(dir_okay=False), help="Write JSON export to this file instead of stdout.")
+@click.option("--config", default=None, help="Path to the configuration file.")
+@click.option("--permission-db", default=None, type=click.Path(dir_okay=False), help="Path to permissions.db. Defaults to ~/.kryoset/permissions.db.")
+def user_export(username: str, output_path: str | None, config: str | None, permission_db: str | None) -> None:
+    """Export non-secret account metadata for USERNAME (GDPR access/portability)."""
+    import json
+    import os
+    from kryoset.core.home_paths import resolve_user_home_roots
+    from kryoset.core.permission_store import PermissionStore
+    from kryoset.core.quota import QuotaManager
+    from kryoset.core.storage_manager import StorageManager
+    from kryoset.core.totp import TOTPManager
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    if not user_manager.user_exists(username):
+        click.echo(f"[error] User '{username}' does not exist.", err=True)
+        raise SystemExit(1)
+
+    store = PermissionStore(Path(permission_db)) if permission_db else PermissionStore()
+    store.initialize()
+    storage_manager = StorageManager(configuration, user_manager, store)
+    quota_manager = QuotaManager(user_manager, configuration.storage_path)
+    totp_manager = TOTPManager(user_manager)
+
+    users = user_manager._get_users()
+    record = users.get(username, {})
+    home_roots = resolve_user_home_roots(username, user_manager, store)
+    home_path = home_roots[0] if home_roots else user_manager.get_home_path(username)
+    rules = []
+    for rule in store.get_rules_for_user(username):
+        rules.append({
+            "rule_id": rule.rule_id,
+            "subject_type": rule.subject_type,
+            "subject_id": rule.subject_id,
+            "path": rule.path,
+            "permissions": rule.permissions.to_names(),
+            "expires_at": rule.expires_at.isoformat() if rule.expires_at else None,
+            "can_delegate": rule.can_delegate,
+            "password_protected": rule.password_hash is not None,
+            "created_at": rule.created_at.isoformat() if rule.created_at else None,
+        })
+    shares = []
+    for link in store.list_share_links(created_by=username):
+        shares.append({
+            "path": link.path,
+            "permissions": link.permissions.to_names(),
+            "expires_at": link.expires_at.isoformat() if link.expires_at else None,
+            "download_limit": link.download_limit,
+            "download_count": link.download_count,
+            "password_protected": link.password_hash is not None,
+            "created_at": link.created_at.isoformat() if link.created_at else None,
+            "valid": link.is_valid(),
+        })
+
+    export = {
+        "username": username,
+        "account": {
+            "enabled": record.get("enabled", True),
+            "admin": user_manager.is_admin(username),
+            "home_path": user_manager.get_home_path(username),
+            "totp_enabled": totp_manager.is_enabled(username),
+            "token_version": user_manager.get_token_version(username),
+        },
+        "groups": store.get_user_groups(username),
+        "storage": {
+            "home_roots": home_roots,
+            "quota_bytes": storage_manager.get_effective_quota(username),
+            "used_bytes_cached": quota_manager.get_cached_used_bytes(username, home_path=home_path),
+        },
+        "permission_rules": rules,
+        "share_links": shares,
+    }
+    serialized = json.dumps(export, indent=2, ensure_ascii=False) + "\n"
+    if output_path:
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(serialized, encoding="utf-8")
+        try:
+            os.chmod(target, 0o600)
+        except OSError:
+            pass
+        click.echo(f"[ok] Export written to {target}")
+    else:
+        click.echo(serialized, nl=False)
+
+
+@user.command("purge")
+@click.argument("username")
+@click.option("--delete-files/--keep-files", default=False, show_default=True, help="Also delete the user's resolved home directories under storage root.")
+@click.option("--yes", is_flag=True, default=False, help="Confirm destructive purge without an interactive prompt.")
+@click.option("--config", default=None, help="Path to the configuration file.")
+@click.option("--permission-db", default=None, type=click.Path(dir_okay=False), help="Path to permissions.db. Defaults to ~/.kryoset/permissions.db.")
+def user_purge(username: str, delete_files: bool, yes: bool, config: str | None, permission_db: str | None) -> None:
+    """Delete a user and related metadata for GDPR erasure workflows."""
+    import shutil
+    from kryoset.core.home_paths import resolve_user_home_roots
+    from kryoset.core.permission_store import PermissionStore
+    from kryoset.core.storage_manager import StorageManager
+
+    if not yes and not click.confirm(
+        f"Permanently purge user '{username}' metadata" + (" and files" if delete_files else "") + "?"
+    ):
+        click.echo("[info] Purge cancelled.")
+        return
+
+    configuration = _load_config(config)
+    user_manager = UserManager(configuration)
+    store = PermissionStore(Path(permission_db)) if permission_db else PermissionStore()
+    store.initialize()
+    storage_manager = StorageManager(configuration, user_manager, store)
+
+    home_roots = resolve_user_home_roots(username, user_manager, store)
+    if not home_roots:
+        configured_home = user_manager.get_home_path(username)
+        if configured_home:
+            home_roots = [configured_home]
+
+    removed_account = False
+    if user_manager.user_exists(username):
+        user_manager.remove_user(username)
+        removed_account = True
+    store.delete_user_data(username)
+    try:
+        storage_manager.set_allocation(f"user:{username}", None)
+    except Exception:
+        pass
+
+    deleted_paths: list[str] = []
+    if delete_files:
+        storage_root = configuration.storage_path.resolve()
+        for home in home_roots:
+            if not home or home in {"/", "."}:
+                click.echo(f"[warning] Refused to delete unsafe home root '{home}'.", err=True)
+                continue
+            target = (storage_root / home.lstrip("/")).resolve()
+            try:
+                target.relative_to(storage_root)
+            except ValueError:
+                click.echo(f"[warning] Refused to delete path outside storage: {target}", err=True)
+                continue
+            if target == storage_root:
+                click.echo("[warning] Refused to delete storage root.", err=True)
+                continue
+            if target.is_dir():
+                shutil.rmtree(target)
+                deleted_paths.append(str(target))
+            elif target.is_file() or target.is_symlink():
+                target.unlink()
+                deleted_paths.append(str(target))
+
+    status = "account removed" if removed_account else "account already absent"
+    click.echo(f"[ok] User '{username}' purged ({status}); metadata removed.")
+    if delete_files:
+        if deleted_paths:
+            for path in deleted_paths:
+                click.echo(f"     deleted: {path}")
+        else:
+            click.echo("     no home files deleted.")
+
 @cli.group()
 def storage() -> None:
     """Manage Kryoset's global storage budget."""
@@ -395,10 +572,6 @@ def logs(lines: int, follow: bool, event_filter: str | None) -> None:
 def main() -> None:
     """Entry point registered in pyproject.toml."""
     cli()
-
-
-if __name__ == "__main__":
-    main()
 
 
 @cli.group()
@@ -498,7 +671,7 @@ def perm() -> None:
 @click.option("--permissions", "-p", required=True, multiple=True,
               help="Permission flags: LIST, PREVIEW, DOWNLOAD, UPLOAD, COPY, RENAME, MOVE, DELETE, MANAGE_PERMS, SHARE.")
 @click.option("--expires", default=None, help="Expiry: ISO date or e.g. '24h', '7d'.")
-@click.option("--password", is_flag=True, default=False, help="Prompt for a path password.")
+@click.option("--password", is_flag=True, default=False, help="Deprecated/disabled: password-protected ACL rules are not supported.")
 @click.option("--quota", default=None, help="Upload quota, e.g. 500MB, 2GB.")
 @click.option("--download-limit", default=None, type=int, help="Max downloads.")
 @click.option("--ip-whitelist", default=None, help="Comma-separated allowed IPs/CIDRs.")
@@ -510,7 +683,6 @@ def perm_add(path, subject_user, subject_group, permissions, expires, password,
     """Add a permission rule on PATH."""
     import re
     from datetime import datetime, timedelta
-    import bcrypt as _bcrypt
     from kryoset.core.permission_store import PermissionStore
     from kryoset.core.permissions import Permission, PermissionRule, TimeWindow
 
@@ -536,18 +708,17 @@ def perm_add(path, subject_user, subject_group, permissions, expires, password,
         if match:
             amount, unit = int(match.group(1)), match.group(2)
             delta = timedelta(hours=amount) if unit == "h" else timedelta(days=amount)
-            expires_at = datetime.utcnow() + delta
+            expires_at = now_utc() + delta
         else:
             expires_at = datetime.fromisoformat(expires)
 
     password_hash = None
     if password:
-        pwd = getpass.getpass("Path password: ")
-        confirm = getpass.getpass("Confirm: ")
-        if pwd != confirm:
-            click.echo("[error] Passwords do not match.", err=True)
-            raise SystemExit(1)
-        password_hash = _bcrypt.hashpw(pwd.encode(), _bcrypt.gensalt()).decode()
+        click.echo(
+            "[error] Password-protected ACL rules are disabled. Use password-protected share links instead.",
+            err=True,
+        )
+        raise SystemExit(1)
 
     quota_bytes = None
     if quota:
@@ -681,7 +852,7 @@ def share_create(path, created_by, expires, download_limit, permissions, passwor
         if match:
             amount, unit = int(match.group(1)), match.group(2)
             delta = timedelta(hours=amount) if unit == "h" else timedelta(days=amount)
-            expires_at = datetime.utcnow() + delta
+            expires_at = now_utc() + delta
         else:
             expires_at = datetime.fromisoformat(expires)
 
@@ -953,3 +1124,7 @@ def api(host: str, port: int, cert: str | None, key: str | None, config: str | N
         ssl_keyfile='/home/martial/.kryoset/api_key.pem'
     )
     """
+
+
+if __name__ == "__main__":
+    main()

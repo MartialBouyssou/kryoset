@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from kryoset.api.dependencies import get_current_user, require_admin
+from kryoset.core.home_paths import resolve_user_home_roots
 from kryoset.core.user_manager import UserError
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -141,6 +142,18 @@ def delete_user(
         request.app.state.user_manager.remove_user(username)
     except UserError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
+
+    permission_store = request.app.state.permission_store
+    if permission_store is not None and hasattr(permission_store, "delete_user_data"):
+        permission_store.delete_user_data(username)
+
+    storage_manager = request.app.state.storage_manager
+    if storage_manager is not None:
+        try:
+            storage_manager.set_allocation(f"user:{username}", None)
+        except Exception:
+            pass
+
     audit = request.app.state.audit_logger
     if audit:
         audit.log_user_deleted(payload["sub"], username)
@@ -190,6 +203,9 @@ def reset_password(username: str, request: Request, payload: dict = Depends(requ
         temp_password = request.app.state.user_manager.generate_temporary_password(username)
     except UserError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
+    audit = request.app.state.audit_logger
+    if audit:
+        audit.log_user_password_reset(payload["sub"], username)
     return {"detail": "Password reset.", "temporary_password": temp_password}
 
 
@@ -214,6 +230,76 @@ def set_admin(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
     action = "granted" if grant else "revoked"
     return {"detail": f"Admin {action} for '{username}'."}
+
+
+
+
+@router.get("/{username}/export")
+def export_user_data(username: str, request: Request, payload: dict = Depends(get_current_user)) -> dict:
+    """Export non-secret account metadata for GDPR access/portability workflows."""
+    _assert_self_or_admin(payload, username)
+    user_manager = request.app.state.user_manager
+    if not user_manager.user_exists(username):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{username}' does not exist.")
+
+    users = user_manager._get_users()
+    record = users.get(username, {})
+    permission_store = request.app.state.permission_store
+    storage_manager = request.app.state.storage_manager
+    quota_manager = request.app.state.quota_manager
+    totp_manager = request.app.state.totp_manager
+
+    groups = permission_store.get_user_groups(username) if permission_store else []
+    rules = []
+    shares = []
+    if permission_store is not None:
+        for rule in permission_store.get_rules_for_user(username):
+            rules.append({
+                "rule_id": rule.rule_id,
+                "subject_type": rule.subject_type,
+                "subject_id": rule.subject_id,
+                "path": rule.path,
+                "permissions": rule.permissions.to_names(),
+                "expires_at": rule.expires_at.isoformat() if rule.expires_at else None,
+                "can_delegate": rule.can_delegate,
+                "password_protected": rule.password_hash is not None,
+                "created_at": rule.created_at.isoformat() if rule.created_at else None,
+            })
+        for link in permission_store.list_share_links(created_by=username):
+            shares.append({
+                "path": link.path,
+                "permissions": link.permissions.to_names(),
+                "expires_at": link.expires_at.isoformat() if link.expires_at else None,
+                "download_limit": link.download_limit,
+                "download_count": link.download_count,
+                "password_protected": link.password_hash is not None,
+                "created_at": link.created_at.isoformat() if link.created_at else None,
+                "valid": link.is_valid(),
+            })
+
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    home_path = home_roots[0] if home_roots else user_manager.get_home_path(username)
+    used_bytes = quota_manager.get_cached_used_bytes(username, home_path=home_path) if quota_manager else None
+
+    return {
+        "username": username,
+        "account": {
+            "enabled": record.get("enabled", True),
+            "admin": user_manager.is_admin(username),
+            "home_path": user_manager.get_home_path(username),
+            "totp_enabled": totp_manager.is_enabled(username) if totp_manager else False,
+            "token_version": user_manager.get_token_version(username),
+        },
+        "groups": groups,
+        "storage": {
+            "home_roots": home_roots,
+            "quota_bytes": storage_manager.get_effective_quota(username) if storage_manager else (quota_manager.get_quota(username) if quota_manager else None),
+            "used_bytes_cached": used_bytes,
+            "usage_stale": used_bytes is None,
+        },
+        "permission_rules": rules,
+        "share_links": shares,
+    }
 
 
 @router.post("/{username}/totp/setup")
@@ -281,6 +367,12 @@ def totp_confirm(
 def totp_disable(username: str, request: Request, payload: dict = Depends(get_current_user)) -> dict:
     """Disable TOTP for a user. The caller must be the user or an admin."""
     _assert_self_or_admin(payload, username)
+    user_manager = request.app.state.user_manager
+    if user_manager.is_admin(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Revoke the admin role before disabling TOTP for this account.",
+        )
     totp_manager = request.app.state.totp_manager
     if totp_manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="TOTP not configured.")
@@ -299,10 +391,17 @@ def get_quota(username: str, request: Request, payload: dict = Depends(get_curre
     quota_manager = request.app.state.quota_manager
     if quota_manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Quota manager not configured.")
+    user_manager = request.app.state.user_manager
+    permission_store = request.app.state.permission_store
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    home_path = home_roots[0] if home_roots else user_manager.get_home_path(username)
+    used = quota_manager.get_cached_used_bytes(username, home_path=home_path)
     return {
         "username": username,
         "quota_bytes": quota_manager.get_quota(username),
-        "used_bytes": quota_manager.get_used_bytes(username),
+        "used_bytes": used,
+        "usage_stale": used is None,
+        "home_path": home_path,
     }
 
 

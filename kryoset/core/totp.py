@@ -1,7 +1,10 @@
 import base64
 import io
 import secrets
+from datetime import timedelta
 from typing import Optional
+
+from kryoset.core.timezone import now_utc
 
 import pyotp
 import qrcode
@@ -54,8 +57,10 @@ class TOTPManager:
 
         secret = pyotp.random_base32()
         users[username]["totp_secret_pending"] = secret
-        users[username].pop("totp_secret", None)
-        users[username]["totp_enabled"] = False
+        # Keep any already-confirmed secret active until the new code is
+        # confirmed.  Otherwise a failed/interrupted setup could silently
+        # disable 2FA, including for admin accounts.
+        users[username].setdefault("totp_enabled", bool(users[username].get("totp_secret")))
         self._user_manager._save_users(users)
         return secret
 
@@ -150,9 +155,27 @@ class TOTPManager:
             return True
         secret = user.get("totp_secret")
         if not secret:
-            return True
+            # Fail closed: a user flagged as requiring TOTP but missing the
+            # secret must not be allowed through password-only authentication.
+            return False
         totp = pyotp.TOTP(secret)
-        return totp.verify(code, valid_window=1)
+        reference = now_utc()
+        accepted_counter = None
+        for offset in (-1, 0, 1):
+            candidate_time = reference + timedelta(seconds=offset * totp.interval)
+            if secrets.compare_digest(str(totp.at(candidate_time)), str(code)):
+                accepted_counter = totp.timecode(candidate_time)
+                break
+        if accepted_counter is None:
+            return False
+
+        last_counter = int(user.get("totp_last_counter", -1))
+        if accepted_counter <= last_counter:
+            return False
+
+        user["totp_last_counter"] = accepted_counter
+        self._user_manager._save_users(users)
+        return True
 
     def is_enabled(self, username: str) -> bool:
         """

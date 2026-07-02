@@ -279,6 +279,7 @@ def test_user_home_path_restricts_access_outside_home(client, user_manager, user
     users = user_manager._get_users()
     users["alice"]["home_path"] = "/home/alice"
     user_manager._save_users(users)
+    user_token = client.post("/auth/login", json={"username": "alice", "password": "alicepass1"}).json()["access_token"]
 
     (config.storage_path / "home").mkdir(exist_ok=True)
     (config.storage_path / "home" / "alice").mkdir(exist_ok=True)
@@ -308,3 +309,40 @@ def test_group_auto_home_allows_generated_path(client, permission_store, regular
 
     denied = client.get("/files/download?path=directory/other/data.txt", headers=auth_header(user_token))
     assert denied.status_code == 403
+
+
+def test_preview_html_is_served_as_inert_text(client, admin_token, config):
+    payload = "<script>window.evil=true</script>"
+    (config.storage_path / "page.html").write_text(payload, encoding="utf-8")
+
+    resp = client.get("/files/preview?path=page.html", headers=auth_header(admin_token))
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/plain")
+    assert resp.text == payload
+
+
+def test_preview_svg_is_refused(client, admin_token, config):
+    (config.storage_path / "evil.svg").write_text("<svg><script>alert(1)</script></svg>", encoding="utf-8")
+
+    resp = client.get("/files/preview?path=evil.svg", headers=auth_header(admin_token))
+
+    assert resp.status_code == 415
+
+
+def test_password_protected_acl_is_not_bypassed_by_api(client, user_token, permission_store, config):
+    import bcrypt
+    (config.storage_path / "protected-acl.txt").write_text("secret")
+    password_hash = bcrypt.hashpw(b"pathpass123", bcrypt.gensalt()).decode("utf-8")
+    permission_store.add_rule(PermissionRule(
+        subject_type="user",
+        subject_id="alice",
+        path="/protected-acl.txt",
+        permissions=Permission.DOWNLOAD,
+        password_hash=password_hash,
+    ))
+
+    resp = client.get("/files/download?path=protected-acl.txt", headers=auth_header(user_token))
+
+    assert resp.status_code == 403
+    assert "Path password required" in resp.json()["detail"]

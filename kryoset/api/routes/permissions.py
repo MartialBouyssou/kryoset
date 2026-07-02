@@ -40,18 +40,76 @@ def _get_store(request: Request):
     return store
 
 
-def _can_manage_permissions(payload: dict, request: Request) -> bool:
-    """Return True if the user is admin or holds MANAGE_PERMS on at least one path."""
+def _normalize_path(path: str) -> str:
+    stripped = path.strip("/")
+    return "/" + stripped if stripped else "/"
+
+
+def _path_contains(parent: str, child: str) -> bool:
+    parent = _normalize_path(parent)
+    child = _normalize_path(child)
+    if parent == "/":
+        return True
+    return child == parent or child.startswith(parent.rstrip("/") + "/")
+
+
+def _permissions_subset(requested: Permission, allowed: Permission) -> bool:
+    for flag in Permission:
+        if flag is Permission.NONE:
+            continue
+        if flag in requested and flag not in allowed:
+            return False
+    return True
+
+
+def _can_delegate_permissions(
+    payload: dict,
+    request: Request,
+    target_path: str,
+    requested_permissions: Permission | None = None,
+    requested_can_delegate: bool = False,
+) -> bool:
+    """Return True when user can manage permissions for this exact subtree."""
     if payload.get("admin"):
         return True
+    if requested_can_delegate:
+        return False
+    if requested_permissions and Permission.MANAGE_PERMS in requested_permissions:
+        return False
+
     store = request.app.state.permission_store
     if store is None:
         return False
-    rules = store.get_rules_for_user(payload["sub"])
-    for rule in rules:
-        if Permission.MANAGE_PERMS in rule.permissions:
+
+    for rule in store.get_rules_for_user(payload["sub"]):
+        if (
+            rule.can_delegate
+            and Permission.MANAGE_PERMS in rule.permissions
+            and _path_contains(rule.path, target_path)
+            and (requested_permissions is None or _permissions_subset(requested_permissions, rule.permissions))
+        ):
             return True
     return False
+
+
+def _ensure_can_delegate(
+    payload: dict,
+    request: Request,
+    target_path: str,
+    requested_permissions: Permission | None = None,
+    requested_can_delegate: bool = False,
+) -> None:
+    if not _can_delegate_permissions(
+        payload,
+        request,
+        target_path,
+        requested_permissions=requested_permissions,
+        requested_can_delegate=requested_can_delegate,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or delegated MANAGE_PERMS permission required for this path.",
+        )
 
 
 @router.get("/rules")
@@ -88,11 +146,6 @@ def add_rule(
     """
     Add a permission rule. Requires admin or MANAGE_PERMS permission.
     """
-    if not _can_manage_permissions(payload, request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or MANAGE_PERMS permission required.",
-        )
     store = _get_store(request)
     try:
         perms = Permission.from_names(body.permissions)
@@ -105,7 +158,14 @@ def add_rule(
             detail="subject_type must be 'user' or 'group'.",
         )
 
-    normalized_path = "/" + body.path.strip("/") if body.path.strip("/") else "/"
+    normalized_path = _normalize_path(body.path)
+    _ensure_can_delegate(
+        payload,
+        request,
+        normalized_path,
+        requested_permissions=perms,
+        requested_can_delegate=body.can_delegate,
+    )
 
     expires_at = None
     if body.expires_at:
@@ -134,12 +194,11 @@ def update_rule(
     """
     Update a permission rule by ID. Requires admin or MANAGE_PERMS permission.
     """
-    if not _can_manage_permissions(payload, request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or MANAGE_PERMS permission required.",
-        )
     store = _get_store(request)
+
+    existing_rule = store.get_rule(rule_id)
+    if existing_rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rule #{rule_id} does not exist.")
 
     try:
         perms = Permission.from_names(body.permissions)
@@ -152,7 +211,15 @@ def update_rule(
             detail="subject_type must be 'user' or 'group'.",
         )
 
-    normalized_path = "/" + body.path.strip("/") if body.path.strip("/") else "/"
+    normalized_path = _normalize_path(body.path)
+    _ensure_can_delegate(payload, request, existing_rule.path)
+    _ensure_can_delegate(
+        payload,
+        request,
+        normalized_path,
+        requested_permissions=perms,
+        requested_can_delegate=body.can_delegate,
+    )
 
     expires_at = None
     if body.expires_at:
@@ -183,12 +250,11 @@ def remove_rule(
     """
     Remove a permission rule by ID. Requires admin or MANAGE_PERMS permission.
     """
-    if not _can_manage_permissions(payload, request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or MANAGE_PERMS permission required.",
-        )
     store = _get_store(request)
+    existing_rule = store.get_rule(rule_id)
+    if existing_rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rule #{rule_id} does not exist.")
+    _ensure_can_delegate(payload, request, existing_rule.path)
     try:
         store.remove_rule(rule_id)
     except PermissionStoreError as error:

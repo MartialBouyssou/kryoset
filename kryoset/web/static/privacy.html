@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kryoset — Confidentialité</title>
+<link rel="stylesheet" href="/static/privacy.css">
+</head>
+<body>
+<main>
+<p class="meta"><a href="/">← Retour à Kryoset</a></p>
+<h1>Information confidentialité Kryoset</h1>
+<div class="notice">
+Cette page est un modèle opérationnel pour une instance auto-hébergée. L’administrateur de l’instance doit compléter les champs entre crochets avant de l’ouvrir à d’autres personnes.
+</div>
+<h2>Responsable du traitement</h2>
+<p>Responsable : <code>[nom ou organisation]</code><br>Contact : <code>[email de contact]</code><br>Instance : <code>[domaine de l’instance]</code></p>
+<h2>Données traitées</h2>
+<ul>
+<li>Compte : nom d’utilisateur, statut actif/inactif, rôle admin, racines de stockage, appartenance à des groupes.</li>
+<li>Sécurité : hash de mot de passe, état 2FA, version de session, cookies de session HttpOnly, jeton CSRF, tentatives de connexion, adresse IP dans les journaux.</li>
+<li>Fichiers : noms, chemins, tailles, dates de modification et contenu des fichiers déposés par les utilisateurs.</li>
+<li>Partages : chemin du fichier partagé, date d’expiration, compteur de téléchargement, protection par mot de passe.</li>
+</ul>
+<h2>Finalités</h2>
+<p>Les données sont utilisées pour authentifier les utilisateurs, appliquer les permissions, fournir le stockage de fichiers, gérer les quotas, tracer les événements de sécurité et permettre l’administration de l’instance.</p>
+<h2>Conservation</h2>
+<p>Les comptes et fichiers sont conservés tant que le compte existe ou jusqu’à suppression par l’administrateur. Les journaux d’audit sont conservés selon la configuration serveur, par défaut avec une rotation et une purge automatique. Les variables <code>KRYOSET_LOG_RETENTION_DAYS</code> et <code>KRYOSET_LOG_MAX_TOTAL_MB</code> permettent d’adapter cette durée.</p>
+<h2>Droits des personnes</h2>
+<p>Chaque utilisateur peut demander l’accès, la rectification ou la suppression de ses données auprès du responsable indiqué ci-dessus. Kryoset fournit un export de compte via l’API admin et la commande <code>kryoset user export</code>. La suppression complète des métadonnées peut être effectuée avec <code>kryoset user purge</code>.</p>
+<h2>Sécurité</h2>
+<p>Les mots de passe et secrets 2FA ne sont pas exposés dans les exports. Les sessions web utilisent des cookies HttpOnly et un jeton CSRF pour les actions sensibles. Les sessions sont invalidées après désactivation, changement de rôle admin ou changement de mot de passe. Les partages publics n’exposent pas le chemin interne complet avant téléchargement.</p>
+<h2>Sauvegardes</h2>
+<p>Si l’instance est sauvegardée, les sauvegardes peuvent contenir les fichiers, comptes, permissions et journaux. L’administrateur doit définir une durée de conservation et une procédure de restauration/suppression adaptée.</p>
+<p class="meta">Dernière mise à jour du modèle : 2026-07-02.</p>
+</main>
+</body>
+</html>

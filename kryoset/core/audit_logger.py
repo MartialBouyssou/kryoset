@@ -72,6 +72,20 @@ class AuditLogger:
         retention_days: int = DEFAULT_RETENTION_DAYS,
         max_total_size_mb: Optional[int] = DEFAULT_MAX_SIZE_MB,
     ) -> None:
+        env_retention = os.getenv("KRYOSET_LOG_RETENTION_DAYS")
+        if env_retention is not None:
+            try:
+                retention_days = max(1, int(env_retention))
+            except ValueError:
+                pass
+
+        env_size = os.getenv("KRYOSET_LOG_MAX_TOTAL_MB")
+        if env_size is not None:
+            try:
+                max_total_size_mb = None if env_size.lower() in {"none", "0"} else max(1, int(env_size))
+            except ValueError:
+                pass
+
         self._log_directory = log_directory
         self._retention_days = retention_days
         self._max_total_size_bytes = (
@@ -86,6 +100,10 @@ class AuditLogger:
     def _build_logger(self) -> logging.Logger:
         """Create and configure the rotating file logger."""
         self._log_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self._log_directory, 0o700)
+        except OSError:
+            pass
         logger_name = f"kryoset.audit.{id(self)}"
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.INFO)
@@ -176,8 +194,12 @@ class AuditLogger:
             event_type: Short uppercase label padded to 14 characters.
             details: Ordered key=value pairs appended after the label.
         """
+        def _safe(value: object) -> str:
+            text = str(value)
+            return "".join(ch if ch.isprintable() and not ch.isspace() else "_" for ch in text)
+
         label = f"[{event_type:<14}]"
-        pairs = " ".join(f"{key}={value}" for key, value in details.items())
+        pairs = " ".join(f"{_safe(key)}={_safe(value)}" for key, value in details.items())
         self._logger.info("%s %s", label, pairs)
         self._apply_permissions()
 
@@ -267,6 +289,10 @@ class AuditLogger:
     def log_user_deleted(self, actor: str, username: str) -> None:
         """Record a user account deletion."""
         self._write("USER_DELETED", {"actor": actor, "user": username})
+
+    def log_user_password_reset(self, actor: str, username: str) -> None:
+        """Record an admin password reset without logging the new secret."""
+        self._write("USER_PWD_RESET", {"actor": actor, "user": username})
 
     def log_server_shutdown(self) -> None:
         """Record a server shutdown event."""

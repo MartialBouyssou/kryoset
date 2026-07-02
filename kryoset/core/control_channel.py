@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-import bcrypt
 
 from kryoset.core.permission_store import PermissionStore, PermissionStoreError
 from kryoset.core.permissions import Permission, PermissionRule
+from kryoset.core.timezone import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ class ControlChannel:
 
         expires_at = None
         if "expires_in_hours" in command:
-            expires_at = datetime.utcnow() + timedelta(hours=float(command["expires_in_hours"]))
+            expires_at = now_utc() + timedelta(hours=float(command["expires_in_hours"]))
         elif "expires_at" in command:
             expires_at = datetime.fromisoformat(command["expires_at"])
 
@@ -261,16 +261,15 @@ class ControlChannel:
 
         expires_at = None
         if "expires_in_hours" in command:
-            expires_at = datetime.utcnow() + timedelta(hours=float(command["expires_in_hours"]))
+            expires_at = now_utc() + timedelta(hours=float(command["expires_in_hours"]))
         elif "expires_at" in command:
             expires_at = datetime.fromisoformat(command["expires_at"])
 
-        password = command.get("password")
+        if command.get("password"):
+            raise ControlChannelError(
+                "Password-protected ACL rules are disabled. Use password-protected share links instead."
+            )
         password_hash = None
-        if password:
-            password_hash = bcrypt.hashpw(
-                password.encode("utf-8"), bcrypt.gensalt()
-            ).decode("utf-8")
 
         rule = PermissionRule(
             subject_type=subject_type,

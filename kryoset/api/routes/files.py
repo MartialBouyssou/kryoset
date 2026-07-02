@@ -1,40 +1,61 @@
 import mimetypes
+import os
 import shutil
+import tempfile
+from urllib.parse import quote
 from threading import Lock
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from kryoset.api.dependencies import check_path_permission, get_current_user
-from kryoset.core.home_paths import resolve_user_home_roots
+from kryoset.core.home_paths import is_within_home, resolve_user_home_roots
 from kryoset.core.permissions import Permission
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+HTTP_413_CONTENT_TOO_LARGE = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413)
+
 _UPLOAD_LOCKS: dict[str, Lock] = {}
 _UPLOAD_LOCKS_GUARD = Lock()
 
-_PREVIEWABLE_MIME = {
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+_SAFE_INLINE_MIME = {
+    "image/jpeg", "image/png", "image/gif", "image/webp",
     "image/bmp", "image/x-icon", "image/vnd.microsoft.icon", "image/tiff", "image/avif",
     "image/heic", "image/heif",
     "video/mp4", "video/webm", "video/quicktime",
     "audio/mpeg", "audio/ogg", "audio/wav",
-    "text/plain", "text/markdown", "text/csv",
     "application/pdf",
 }
 
-_PREVIEWABLE_EXT = {
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+_SAFE_INLINE_EXT = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",
     ".bmp", ".ico", ".tif", ".tiff", ".avif", ".jfif", ".heic", ".heif",
     ".mp4", ".webm", ".mov",
     ".mp3", ".ogg", ".wav",
-    ".txt", ".md", ".csv", ".log", ".json", ".xml", ".py", ".js", ".ts", ".html", ".css",
     ".pdf",
 }
+
+_TEXT_PREVIEW_EXT = {
+    ".txt", ".md", ".csv", ".log", ".json", ".xml", ".py", ".js", ".ts", ".html", ".css",
+}
+
+# SVG/HTML/JS/XML must never be served with active same-origin MIME from the
+# authenticated preview endpoint.  They are displayed as inert text or refused
+# to prevent uploaded-file XSS/token theft.
+_UNSAFE_ACTIVE_EXT = {".svg", ".svgz"}
+
+
+MAX_UPLOAD_BYTES = int(os.getenv("KRYOSET_MAX_UPLOAD_BYTES", str(1024 * 1024 * 1024)))
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+def _content_disposition(disposition: str, filename: str) -> dict[str, str]:
+    safe_name = filename.replace("\r", "_").replace("\n", "_").replace('"', "_") or "download"
+    return {"Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(safe_name)}"}
 
 _PREVIEWABLE_MIME_BY_EXT = {
     ".jpg": "image/jpeg",
@@ -88,6 +109,22 @@ def _safe_resolve(storage_root: Path, rel_path: str) -> Path:
     except ValueError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Path traversal detected.")
     return resolved
+
+
+def _normalize_remote_path(path: str) -> str:
+    return "/" + str(path or "").strip("/")
+
+
+def _home_path_for_remote(username: str, remote_path: str, user_manager, permission_store) -> Optional[str]:
+    """Return the effective home root that contains a remote path."""
+    if user_manager is None:
+        return None
+    normalized = _normalize_remote_path(remote_path)
+    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
+    for home_root in home_roots:
+        if is_within_home(normalized, home_root):
+            return home_root
+    return home_roots[0] if home_roots else user_manager.get_home_path(username)
 
 
 def _upload_lock_for(username: str) -> Lock:
@@ -165,10 +202,12 @@ def list_directory(
         previewable = False
         if item.is_file():
             mime, _ = mimetypes.guess_type(item.name)
+            suffix = item.suffix.lower()
             previewable = (
-                item.suffix.lower() in _PREVIEWABLE_EXT
-                or (mime and mime in _PREVIEWABLE_MIME)
-            )
+                suffix in _SAFE_INLINE_EXT
+                or suffix in _TEXT_PREVIEW_EXT
+                or (mime and mime in _SAFE_INLINE_MIME)
+            ) and suffix not in _UNSAFE_ACTIVE_EXT
         entries.append({
             "name": item.name,
             "type": "directory" if item.is_dir() else "file",
@@ -212,7 +251,11 @@ def download_file(
     if audit:
         audit.log_file_download(username, path)
 
-    return FileResponse(path=target, filename=target.name)
+    return FileResponse(
+        path=target,
+        media_type="application/octet-stream",
+        headers=_content_disposition("attachment", target.name),
+    )
 
 
 @router.get("/preview")
@@ -220,7 +263,7 @@ def preview_file(
     path: str = Query(...),
     request: Request = None,
     payload: dict = Depends(get_current_user),
-) -> Response:
+) -> FileResponse:
     """
     Return a file for inline preview in the browser.
 
@@ -237,20 +280,23 @@ def preview_file(
 
     suffix = target.suffix.lower()
     mime, _ = mimetypes.guess_type(target.name)
-    is_previewable = suffix in _PREVIEWABLE_EXT or (mime in _PREVIEWABLE_MIME if mime else False)
 
-    if not is_previewable:
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File type not previewable.")
+    if suffix in _UNSAFE_ACTIVE_EXT:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File type not safe for inline preview.")
 
-    content = target.read_bytes()
+    if suffix in _TEXT_PREVIEW_EXT:
+        mime = "text/plain; charset=utf-8"
+    else:
+        is_previewable = suffix in _SAFE_INLINE_EXT or (mime in _SAFE_INLINE_MIME if mime else False)
+        if not is_previewable:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File type not previewable.")
+        if not mime:
+            mime = _PREVIEWABLE_MIME_BY_EXT.get(suffix, "application/octet-stream")
 
-    if not mime:
-        mime = _PREVIEWABLE_MIME_BY_EXT.get(suffix, "application/octet-stream")
-
-    return Response(
-        content=content,
+    return FileResponse(
+        path=target,
         media_type=mime,
-        headers={"Content-Disposition": f'inline; filename="{target.name}"'},
+        headers=_content_disposition("inline", target.name),
     )
 
 
@@ -270,8 +316,34 @@ async def upload_file(
     check_path_permission(request, parent, Permission.UPLOAD, username)
     target = _safe_resolve(storage_root, path)
 
-    content = await file.read()
-    file_size = len(content)
+    if file is None or not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No upload file provided.")
+
+    tmp_path: Path | None = None
+    file_size = 0
+    tmp_dir = storage_root / ".kryoset_tmp"
+    tmp_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, dir=tmp_dir) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+                while True:
+                    chunk = await file.read(UPLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    file_size += len(chunk)
+                    if MAX_UPLOAD_BYTES and file_size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status_code=HTTP_413_CONTENT_TOO_LARGE,
+                            detail=f"Upload refused: file exceeds server upload limit of {_human_bytes(MAX_UPLOAD_BYTES)}.",
+                        )
+                    tmp_file.write(chunk)
+        except Exception:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+            raise
+    finally:
+        await file.close()
 
     storage_manager = request.app.state.storage_manager
     quota_manager = request.app.state.quota_manager
@@ -286,9 +358,8 @@ async def upload_file(
         if quota_bytes is None and quota_manager is not None:
             quota_bytes = quota_manager.get_quota(username)
 
-        # Resolve used space (a) from the effective home path currently enforced for the user.
-        home_roots = resolve_user_home_roots(username, user_manager, permission_store)
-        home_path = home_roots[0] if home_roots else user_manager.get_home_path(username)
+        # Resolve used space from the home root that actually contains this upload path.
+        home_path = _home_path_for_remote(username, path, user_manager, permission_store)
         used_bytes = (
             quota_manager.get_used_bytes(username, home_path=home_path)
             if quota_manager is not None
@@ -306,7 +377,9 @@ async def upload_file(
             audit = request.app.state.audit_logger
             if audit:
                 audit.log_quota_exceeded(username, path)
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=detail)
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+            raise HTTPException(status_code=HTTP_413_CONTENT_TOO_LARGE, detail=detail)
 
         # Keep global budget check from storage manager.
         if storage_manager is not None:
@@ -322,11 +395,24 @@ async def upload_file(
                 audit = request.app.state.audit_logger
                 if audit:
                     audit.log_quota_exceeded(username, path)
-                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(error))
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
+                raise HTTPException(status_code=HTTP_413_CONTENT_TOO_LARGE, detail=str(error))
+
+        if target.exists() and target.is_dir():
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Target path is a directory.")
 
         existing_size = _path_size_bytes(target) if target.exists() else 0
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+        try:
+            shutil.move(str(tmp_path), str(target))
+            tmp_path = None
+        except OSError:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
         if quota_manager is not None:
             quota_manager.update_used_bytes(
@@ -338,6 +424,9 @@ async def upload_file(
     audit = request.app.state.audit_logger
     if audit:
         audit.log_file_upload(username, path, file_size)
+
+    if tmp_path and tmp_path.exists():
+        tmp_path.unlink()
 
     return {"detail": "File uploaded.", "path": path, "size": file_size}
 
@@ -395,8 +484,7 @@ def delete_path(
     user_manager = request.app.state.user_manager
     permission_store = request.app.state.permission_store
     quota_manager = request.app.state.quota_manager
-    home_roots = resolve_user_home_roots(username, user_manager, permission_store)
-    home_path = home_roots[0] if home_roots else user_manager.get_home_path(username)
+    home_path = _home_path_for_remote(username, path, user_manager, permission_store)
 
     if target.is_dir():
         shutil.rmtree(target)
@@ -443,7 +531,10 @@ def rename_path(
 
     if src.parent != dst.parent:
         check_path_permission(request, body.source, Permission.MOVE, username)
+        destination_parent = str(Path(body.destination).parent)
+        check_path_permission(request, destination_parent, Permission.UPLOAD, username)
 
+    dst.parent.mkdir(parents=True, exist_ok=True)
     src.rename(dst)
 
     audit = request.app.state.audit_logger

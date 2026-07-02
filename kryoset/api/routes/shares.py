@@ -1,11 +1,14 @@
+from pathlib import PurePosixPath
 from typing import Optional
+from urllib.parse import quote
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from kryoset.api.dependencies import get_current_user
+from kryoset.api.rate_limit import RateLimitExceeded, share_limiter
 from kryoset.core.permission_store import PermissionStoreError
 from kryoset.core.permissions import Permission
 
@@ -35,6 +38,114 @@ def _get_store(request: Request):
     return store
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _content_disposition(filename: str) -> dict[str, str]:
+    safe_name = filename.replace("\r", "_").replace("\n", "_").replace('"', "_") or "download"
+    return {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe_name)}"}
+
+def _normalize_share_path(path: str) -> str:
+    raw = str(path or "").strip()
+    if not raw:
+        raise PermissionStoreError("Share path cannot be empty.")
+    parts = []
+    for part in raw.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            raise PermissionStoreError("Share path traversal is not allowed.")
+        parts.append(part)
+    return "/" + "/".join(parts)
+
+
+def _public_filename(path: str) -> str:
+    name = PurePosixPath(path).name
+    return name or "download"
+
+
+def _rate_limit_response(error: RateLimitExceeded) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=str(error),
+        headers={"Retry-After": str(error.retry_after)},
+    )
+
+
+def _verify_share_password(token: str, request: Request, password_hash: str, password: Optional[str]) -> None:
+    if password is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This share link requires a password.",
+        )
+
+    key = f"share:{_client_ip(request)}:{token}"
+    try:
+        share_limiter.check(key)
+    except RateLimitExceeded as error:
+        raise _rate_limit_response(error)
+
+    if not bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")):
+        try:
+            share_limiter.record_failure(
+                key,
+                limit=8,
+                window_seconds=10 * 60,
+                block_seconds=10 * 60,
+            )
+        except RateLimitExceeded as error:
+            raise _rate_limit_response(error)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid share link password.",
+        )
+    share_limiter.reset(key)
+
+
+def _public_download_impl(token: str, request: Request, password: Optional[str]) -> FileResponse:
+    store = _get_store(request)
+    link = store.get_share_link(token)
+
+    if link is None or not link.is_valid():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found or expired.")
+
+    if link.password_hash:
+        _verify_share_password(token, request, link.password_hash, password)
+
+    if Permission.DOWNLOAD not in link.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This share link does not grant download access.",
+        )
+
+    storage_root = request.app.state.configuration.storage_path
+    target = (storage_root / link.path.lstrip("/")).resolve()
+
+    try:
+        target.relative_to(storage_root.resolve())
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid path.")
+
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+
+    try:
+        store.reserve_share_download(token)
+    except PermissionStoreError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
+
+    audit = request.app.state.audit_logger
+    if audit:
+        audit.log_share_accessed(token, _client_ip(request))
+
+    return FileResponse(
+        path=target,
+        media_type="application/octet-stream",
+        headers=_content_disposition(target.name),
+    )
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_share(
     body: ShareCreateRequest,
@@ -46,9 +157,13 @@ def create_share(
     """
     username = payload["sub"]
     from kryoset.api.dependencies import check_path_permission
-    check_path_permission(request, body.path, Permission.SHARE, username)
-
     store = _get_store(request)
+    try:
+        normalized_path = _normalize_share_path(body.path)
+    except PermissionStoreError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+    check_path_permission(request, normalized_path.lstrip("/"), Permission.SHARE, username)
+
 
     try:
         perms = Permission.from_names(body.permissions)
@@ -60,14 +175,23 @@ def create_share(
         from kryoset.core.timezone import parse_iso
         expires_at = parse_iso(body.expires_at)
 
-    link = store.create_share_link(
-        created_by=username,
-        path=body.path,
-        permissions=perms,
-        expires_at=expires_at,
-        download_limit=body.download_limit,
-        password=body.password,
-    )
+    try:
+        if body.password is not None and len(body.password) < 8:
+            raise PermissionStoreError("Share password must be at least 8 characters long.")
+        link = store.create_share_link(
+            created_by=username,
+            path=normalized_path,
+            permissions=perms,
+            expires_at=expires_at,
+            download_limit=body.download_limit,
+            password=body.password,
+        )
+    except PermissionStoreError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+
+    audit = request.app.state.audit_logger
+    if audit:
+        audit.log_share_created(username, body.path, link.token)
     return {
         "token": link.token,
         "path": link.path,
@@ -135,6 +259,10 @@ def revoke_share(
         store.revoke_share_link(token)
     except PermissionStoreError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error))
+
+    audit = request.app.state.audit_logger
+    if audit:
+        audit.log_share_revoked(username, token)
     return {"detail": "Share link revoked."}
 
 
@@ -143,65 +271,21 @@ def public_download(
     token: str,
     request: Request,
     password: Optional[str] = None,
-) -> StreamingResponse:
+) -> FileResponse:
     """
-    Download a file via a public share link. No authentication required.
+    Download a file via a public share link.
 
-    If the share link is password-protected, supply the password as a
-    query parameter.
+    For password-protected links, prefer POST /shares/public/{token} with a JSON
+    body so the password is not stored in URLs, browser history or access logs.
     """
-    store = _get_store(request)
-    link = store.get_share_link(token)
+    return _public_download_impl(token, request, password)
 
-    if link is None or not link.is_valid():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found or expired.")
 
-    if link.password_hash:
-        if password is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="This share link requires a password.",
-            )
-        if not bcrypt.checkpw(password.encode("utf-8"), link.password_hash.encode("utf-8")):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid share link password.",
-            )
-
-    if Permission.DOWNLOAD not in link.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This share link does not grant download access.",
-        )
-
-    storage_root = request.app.state.configuration.storage_path
-    target = (storage_root / link.path.lstrip("/")).resolve()
-
-    try:
-        target.relative_to(storage_root.resolve())
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid path.")
-
-    if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
-
-    file_size = target.stat().st_size
-
-    async def _iter_file():
-        bytes_sent = 0
-        chunk_size = 64 * 1024
-        with open(target, "rb") as handle:
-            while True:
-                if await request.is_disconnected():
-                    break
-                chunk = handle.read(chunk_size)
-                if not chunk:
-                    break
-                bytes_sent += len(chunk)
-                yield chunk
-
-        if bytes_sent == file_size:
-            store.increment_share_download(token)
-
-    headers = {"Content-Disposition": f'attachment; filename="{target.name}"'}
-    return StreamingResponse(_iter_file(), media_type="application/octet-stream", headers=headers)
+@router.post("/public/{token}")
+def public_download_post(
+    token: str,
+    request: Request,
+    body: PublicDownloadRequest | None = None,
+) -> FileResponse:
+    """Download a public share using a JSON body for the optional password."""
+    return _public_download_impl(token, request, body.password if body else None)

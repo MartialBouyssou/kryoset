@@ -147,14 +147,18 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         self._pending_command_path: Optional[str] = None
         super().__init__(server, *args, **kwargs)
 
-    def _resolve(self, client_path: str) -> Path:
-        """Translate a client path to an absolute local path safely."""
+    def _resolve(self, client_path: str) -> Optional[Path]:
+        """Translate a client path to an absolute local path safely.
+
+        Returns ``None`` when the requested path escapes the configured storage
+        root instead of silently mapping the request back to the storage root.
+        """
         resolved = (self._storage_path / client_path.lstrip("/")).resolve()
         try:
             resolved.relative_to(self._storage_path.resolve())
         except ValueError:
             logger.warning("Directory traversal blocked: %s", client_path)
-            return self._storage_path
+            return None
         return resolved
 
     def _to_remote_path(self, local_path: Path) -> str:
@@ -181,9 +185,11 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             )
         if home_roots:
             return PRESET_OWNER if any(is_within_home(remote_path, root) for root in home_roots) else Permission.NONE
-        perms, _ = self._permission_store.resolve_permissions(
+        perms, password_hash = self._permission_store.resolve_permissions(
             self._username, remote_path, self._client_ip
         )
+        if password_hash:
+            return Permission.NONE
         return perms
 
     def _can(self, remote_path: str, flag: Permission) -> bool:
@@ -219,7 +225,7 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return result
 
         real_path = self._resolve(path)
-        if not real_path.is_dir():
+        if real_path is None or not real_path.is_dir():
             return paramiko.SFTP_NO_SUCH_FILE
 
         entries = []
@@ -247,7 +253,7 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return attr
 
         real_path = self._resolve(path)
-        if not real_path.exists():
+        if real_path is None or not real_path.exists():
             return paramiko.SFTP_NO_SUCH_FILE
         remote_path = self._to_remote_path(real_path)
         if not self._can(remote_path, Permission.LIST):
@@ -262,6 +268,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return self._open_virtual(path, flags)
 
         real_path = self._resolve(path)
+        if real_path is None:
+            return paramiko.SFTP_NO_SUCH_FILE
         remote_path = self._to_remote_path(real_path)
         is_write = bool(flags & (os.O_WRONLY | os.O_RDWR))
 
@@ -378,6 +386,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         if self._control.is_virtual_path(path):
             return paramiko.SFTP_PERMISSION_DENIED
         real_path = self._resolve(path)
+        if real_path is None:
+            return paramiko.SFTP_NO_SUCH_FILE
         remote_path = self._to_remote_path(real_path)
         if not self._can(remote_path, Permission.DELETE):
             return self._deny_silently()
@@ -401,6 +411,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
             return paramiko.SFTP_PERMISSION_DENIED
         real_old = self._resolve(old_path)
         real_new = self._resolve(new_path)
+        if real_old is None or real_new is None:
+            return paramiko.SFTP_NO_SUCH_FILE
         old_remote = self._to_remote_path(real_old)
         new_remote = self._to_remote_path(real_new)
 
@@ -423,6 +435,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         if self._control.is_virtual_path(path):
             return paramiko.SFTP_PERMISSION_DENIED
         real_path = self._resolve(path)
+        if real_path is None:
+            return paramiko.SFTP_NO_SUCH_FILE
         remote_path = self._to_remote_path(real_path)
         if not self._can(remote_path, Permission.UPLOAD):
             return self._deny_silently()
@@ -440,6 +454,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         if self._control.is_virtual_path(path):
             return paramiko.SFTP_PERMISSION_DENIED
         real_path = self._resolve(path)
+        if real_path is None:
+            return paramiko.SFTP_NO_SUCH_FILE
         remote_path = self._to_remote_path(real_path)
         if not self._can(remote_path, Permission.DELETE):
             return self._deny_silently()
@@ -458,6 +474,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
         Returns the resolved Path so callers can use it directly.
         """
         home_real = self._resolve(home_remote)
+        if home_real is None:
+            raise ValueError(f"Invalid home path escapes storage root: {home_remote}")
         home_real.mkdir(parents=True, exist_ok=True)
         return home_real
 
@@ -498,6 +516,8 @@ class KryosetSFTPServerInterface(paramiko.SFTPServerInterface):
                     return home_remote
 
         real_path = self._resolve(path)
+        if real_path is None:
+            return "/"
         return self._to_remote_path(real_path)
 
 
@@ -552,18 +572,19 @@ class KryosetServerInterface(paramiko.ServerInterface):
         self._audit_logger.log_auth_failure(username, self.client_ip)
         return paramiko.AUTH_FAILED
 
-    def check_auth_interactive(self, username: str, submethods: str) -> int:
-        """
-        Entry point for keyboard-interactive authentication (second factor).
-
-        Called by Paramiko when the client requests keyboard-interactive auth.
-        The actual TOTP code verification happens in
-        :meth:`check_auth_interactive_response` which Paramiko calls with the
-        user's typed response to our prompt.
-        """
+    def check_auth_interactive(self, username: str, submethods: str):
+        """Start keyboard-interactive authentication for the TOTP second factor."""
+        if not self._password_authenticated or username != self.authenticated_username:
+            return paramiko.AUTH_FAILED
         if not self._totp_manager or not self._totp_manager.is_enabled(username):
             return paramiko.AUTH_SUCCESSFUL
-        return paramiko.AUTH_SUCCESSFUL
+
+        query = paramiko.InteractiveQuery(
+            "Kryoset two-factor authentication",
+            "Enter the 6-digit code from your authenticator app.",
+        )
+        query.add_prompt("TOTP code (6 digits): ", echo=False)
+        return query
 
     def get_auth_interactive_prompt(
         self, username: str, instruction: str, lang: str, prompts: list
@@ -591,7 +612,7 @@ class KryosetServerInterface(paramiko.ServerInterface):
             AUTH_SUCCESSFUL if the code is valid, AUTH_FAILED otherwise.
         """
         username = self.authenticated_username
-        if not username:
+        if not username or not self._password_authenticated:
             return paramiko.AUTH_FAILED
 
         if not self._totp_manager or not self._totp_manager.is_enabled(username):

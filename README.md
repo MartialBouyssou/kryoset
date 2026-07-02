@@ -75,6 +75,18 @@ kryoset user totp confirm alice 123456
 kryoset user set-admin alice
 ```
 
+
+### Browser session hardening
+
+The web UI uses HttpOnly cookies for access/refresh JWTs plus a readable CSRF cookie/header pair for unsafe requests. For a public HTTPS deployment, set:
+
+```bash
+export KRYOSET_COOKIE_SECURE=1
+export KRYOSET_COOKIE_SAMESITE=strict
+```
+
+Do not reintroduce token storage in `localStorage` or `sessionStorage`; this is intentionally blocked by the security workflow.
+
 ### 4) Configure storage limits
 
 ```bash
@@ -219,3 +231,43 @@ pytest --cov
 ## License
 
 [MIT](LICENSE) - Copyright (c) 2026 Kryoset Contributors
+
+## Security and privacy operations
+
+### Dependency audit
+
+Install development dependencies and run the audit locally:
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pip_audit
+python -m semgrep scan --config .semgrep/kryoset.yml --error
+detect-secrets scan --baseline .secrets.baseline
+pytest
+```
+
+A GitHub Actions workflow is included in `.github/workflows/security.yml` to run tests, `pip-audit`, local Semgrep rules and committed-secret scanning on pushes, pull requests and a weekly schedule.
+
+### GDPR / privacy workflows
+
+Kryoset includes a privacy notice template at `/privacy`. Edit it before exposing the instance to other users.
+
+Export one user's non-secret account data:
+
+```bash
+kryoset user export alice --output alice-export.json
+```
+
+Purge account metadata without deleting home files:
+
+```bash
+kryoset user purge alice --yes
+```
+
+Purge account metadata and the user's resolved home directories under the storage root:
+
+```bash
+kryoset user purge alice --delete-files --yes
+```
+
+The export intentionally excludes password hashes, TOTP secrets, share tokens and share password hashes.

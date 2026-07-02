@@ -61,6 +61,8 @@ class QuotaManager:
         configuration = getattr(self._user_manager, "_configuration", None)
         if configuration is None:
             return {}
+        if hasattr(configuration, "reload_if_changed"):
+            configuration.reload_if_changed()
         raw_cache = configuration._data.get("user_used_bytes_cache", {})
         if not isinstance(raw_cache, dict):
             return {}
@@ -138,6 +140,14 @@ class QuotaManager:
         else:
             users[username]["storage_quota_bytes"] = quota_bytes
         self._user_manager._save_users(users)
+
+
+    def get_cached_used_bytes(self, username: str, home_path: str = None) -> Optional[int]:
+        """Return cached usage for a user/home pair without scanning the filesystem."""
+        _, cache_key = self._resolve_user_dir(username, home_path)
+        with self._usage_lock:
+            cache = self._get_usage_cache()
+            return cache.get(cache_key)
 
     def get_used_bytes(self, username: str, home_path: str = None, *, force_rescan: bool = False) -> int:
         """

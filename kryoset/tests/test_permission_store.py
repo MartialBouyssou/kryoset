@@ -148,7 +148,7 @@ class TestResolvePermissions:
         perms, _ = store.resolve_permissions("alice", "/docs")
         assert Permission.UPLOAD in perms
 
-    def test_group_rule_is_materialized_to_existing_members(self, store):
+    def test_group_rule_is_not_materialized_to_existing_members(self, store):
         store.create_group("editors")
         store.add_group_member("editors", "alice")
         store.add_rule(PermissionRule(
@@ -160,11 +160,12 @@ class TestResolvePermissions:
             r for r in store.list_rules()
             if r.subject_type == "user" and r.subject_id == "alice" and r.path == "/docs"
         ]
-        assert len(user_rules) == 1
-        assert Permission.LIST in user_rules[0].permissions
-        assert Permission.DOWNLOAD in user_rules[0].permissions
+        assert user_rules == []
+        perms, _ = store.resolve_permissions("alice", "/docs")
+        assert Permission.LIST in perms
+        assert Permission.DOWNLOAD in perms
 
-    def test_existing_group_rules_are_materialized_when_member_is_added(self, store):
+    def test_existing_group_rules_apply_when_member_is_added(self, store):
         store.create_group("editors")
         store.add_rule(PermissionRule(
             subject_type="group", subject_id="editors",
@@ -176,10 +177,11 @@ class TestResolvePermissions:
             r for r in store.list_rules()
             if r.subject_type == "user" and r.subject_id == "alice" and r.path == "/projects"
         ]
-        assert len(user_rules) == 1
-        assert Permission.UPLOAD in user_rules[0].permissions
+        assert user_rules == []
+        perms, _ = store.resolve_permissions("alice", "/projects")
+        assert Permission.UPLOAD in perms
 
-    def test_materialization_merges_with_existing_user_rule(self, store):
+    def test_group_rule_does_not_mutate_existing_user_rule(self, store):
         store.create_group("editors")
         store.add_rule(PermissionRule(
             subject_type="user", subject_id="alice",
@@ -198,7 +200,11 @@ class TestResolvePermissions:
         ]
         assert len(user_rules) == 1
         assert Permission.LIST in user_rules[0].permissions
-        assert Permission.DOWNLOAD in user_rules[0].permissions
+        assert Permission.DOWNLOAD not in user_rules[0].permissions
+
+        perms, _ = store.resolve_permissions("alice", "/team")
+        assert Permission.LIST in perms
+        assert Permission.DOWNLOAD not in perms
 
     def test_user_rule_overrides_group_rule(self, store):
         store.create_group("editors")
@@ -314,3 +320,29 @@ class TestUploadQuota:
         store.record_upload(rule_id, "bob", 200)
         assert store.get_upload_usage(rule_id, "alice") == 100
         assert store.get_upload_usage(rule_id, "bob") == 200
+
+
+def test_delete_group_removes_group_rules(store):
+    store.create_group("oldgroup")
+    rule_id = store.add_rule(PermissionRule("group", "oldgroup", "/team", Permission.DOWNLOAD))
+
+    store.delete_group("oldgroup")
+
+    assert store.get_rule(rule_id) is None
+
+
+def test_delete_user_data_removes_acl_metadata(store):
+    store.create_group("team")
+    store.add_group_member("team", "alice")
+    user_rule_id = store.add_rule(PermissionRule("user", "alice", "/home/alice", Permission.DOWNLOAD))
+    group_rule_id = store.add_rule(PermissionRule("group", "team", "/team", Permission.DOWNLOAD))
+    share = store.create_share_link("alice", "/home/alice/file.txt", Permission.DOWNLOAD)
+    store.record_upload(user_rule_id, "alice", 42)
+
+    store.delete_user_data("alice")
+
+    assert store.get_user_groups("alice") == []
+    assert store.get_rule(user_rule_id) is None
+    assert store.get_rule(group_rule_id) is not None
+    assert store.get_share_link(share.token) is None
+    assert store.get_upload_usage(user_rule_id, "alice") == 0
